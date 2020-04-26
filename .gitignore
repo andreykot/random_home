@@ -1,0 +1,3 @@
+#ignore dirs and files for git repository 
+.venv
+.idea
