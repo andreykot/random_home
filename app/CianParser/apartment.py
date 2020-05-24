@@ -16,8 +16,8 @@ class Apartment:
             region (:str): Name of region for search.
                 Example: Saint Petersburg.
             deal (:tuple of :bool): Deal type of apartment. There are four boolean options that can be combined:
-                for sale or for rent 1year+, rent 1year- or per-day rent.
-                Example: (False, True, True) -  apartment's deal type is only for rent and per-day rent.
+                for sale or for rent 1year+, rent 1year- or per-day rent. # TODO исправить, тип может быть только один
+                Example: (False, True, True, True) -  apartment's deal type is only for rent and per-day rent.
             rooms (:tuple of :int): List of available number of rooms for apartment.
                 Example: (1,2) - apartment with 1 or 2 rooms.
             apartment_type (:tuple of :bool): New or secondary type of apartment.

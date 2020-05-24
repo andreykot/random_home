@@ -3,6 +3,8 @@ import re
 import requests
 from bs4 import BeautifulSoup
 
+from app.CianParser.apartment import Apartment
+
 
 CianFlat = namedtuple('CianFlat', ['link', 'title'])
 
@@ -38,6 +40,17 @@ def check_status_code(response):
     else:
         print('Status: {}'.format(response.status_code))
         raise ConnectionError
+
+
+def get_flats_by_query():
+    apartment_link = Apartment(region='Saint Petersburg',
+                               deal=(False, True, False, False),
+                               rooms=(1, 2),
+                               apartment_type=(False, True),
+                               price=(0, 30000))
+    parser = CianParser(query=apartment_link.create_link())
+    page = 2
+    return parser.get_flats(page)
 
 
 if __name__ == '__main__':
