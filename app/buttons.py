@@ -8,6 +8,9 @@ class Buttons(NamedTuple):
     order: list = []
 
 
+SEARCH_TERMS_BUTTONS = Buttons(items=['Выбрать город', 'Тип предложения: купить или снять?', 'Задать количество комнат',
+                                      'Новостройка или вторичка?', 'Задать ценовой диапазон'])
+
 CITY_BUTTONS = Buttons(items=['Москва', 'Санкт-Петербург'],
                        order=[2])
 DEAL_TYPE_BUTTONS = Buttons(items=['Купить', 'Снять на год и более', 'Снять до года', 'Посуточная аренда'])
