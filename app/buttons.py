@@ -7,19 +7,25 @@ class Buttons(NamedTuple):
     items: list
     order: list = []
 
+    def __repr__(self):
+        return "items: {}, order: {}".format(self.items, self.order)
 
-SEARCH_TERMS_BUTTONS = Buttons(items=['Выбрать город', 'Тип предложения: купить или снять?', 'Задать количество комнат',
-                                      'Новостройка или вторичка?', 'Задать ценовой диапазон'])
 
-CITY_BUTTONS = Buttons(items=['Москва', 'Санкт-Петербург'],
-                       order=[2])
-DEAL_TYPE_BUTTONS = Buttons(items=['Купить', 'Снять на год и более', 'Снять до года', 'Посуточная аренда'])
-ROOMS_BUTTONS = Buttons(items=['Студии', '1-комнатные', '2-комнатные', '3-комнатные', '4-комнатные и более'],
-                        order=[2, 2, 1])
-APARTMENT_TYPE_BUTTONS = Buttons(items=['Новостройки', 'Вторичка', 'Все'],
-                                 order=[2, 1])
-PRICE_BUTTONS = dict(rent=Buttons(items=['До 20 000 руб', 'До 30 000 руб', 'До 50 000 руб']),
-                     sale=Buttons(items=['До 5 000 000 руб', 'До 10 000 000 руб', 'До 15 000 000 руб']))
+START_SEARCH = Buttons(items=['Задать критерии поиска'])
+SEARCH_TERMS = Buttons(
+    items=[('Выбрать город', 'city'),
+           ('Тип предложения: купить или снять?', 'deal'),
+           ('Задать количество комнат', 'rooms'),
+           ('Новостройка или вторичка?', 'apart_type'),
+           ('Задать ценовой диапазон', 'price')]
+                       )
+
+CITY = Buttons(items=['Москва', 'Санкт-Петербург'], order=[2])
+DEAL_TYPE = Buttons(items=['Купить', 'Снять на год и более', 'Снять до года', 'Посуточная аренда'])
+ROOMS = Buttons(items=['Студии', '1-комнатные', '2-комнатные', '3-комнатные', '4-комнатные и более'], order=[2, 2, 1])
+APARTMENT_TYPE = Buttons(items=['Новостройки', 'Вторичка', 'Все'], order=[2, 1])
+PRICE = dict(rent=Buttons(items=['До 20 000 руб', 'До 30 000 руб', 'До 50 000 руб']),
+             sale=Buttons(items=['До 5 000 000 руб', 'До 10 000 000 руб', 'До 15 000 000 руб']))
 
 
 def build_replykeyboard(iterable):
@@ -38,7 +44,7 @@ def build_inlinekeyboard(buttons, row_width: int = 3):
     markup = types.InlineKeyboardMarkup(row_width=row_width)
 
     if isinstance(buttons, Buttons):
-        name_is_callback = True if not isinstance(buttons.items[0], (list, set)) else False
+        name_is_callback = True if not isinstance(buttons.items[0], (list, tuple)) else False
         accumulated = 0
         order = buttons.order if buttons.order else [1 for _ in range(len(buttons.items))]
         for n in order:
@@ -53,7 +59,7 @@ def build_inlinekeyboard(buttons, row_width: int = 3):
             markup.row(*inline_buttons)
             accumulated += n
     elif isinstance(buttons, list):
-        name_is_callback = True if not isinstance(buttons[0], (list, set)) else False
+        name_is_callback = True if not isinstance(buttons[0], (list, tuple)) else False
         for button in buttons:
             if name_is_callback:
                 markup.add(types.InlineKeyboardButton(text=button, callback_data=button))
@@ -66,3 +72,6 @@ def build_inlinekeyboard(buttons, row_width: int = 3):
 
 
 EMPTY_MARKUP = types.ReplyKeyboardRemove()
+
+
+
