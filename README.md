@@ -1,3 +1,3 @@
-# random_home
-Telegram bot for random home search for rent or sale.
-Data source: https://cian.ru/
+# Random Home [В разработке]
+Телеграм бот для поиска квартир со случайным подбором.
+Источник данных: https://cian.ru/
