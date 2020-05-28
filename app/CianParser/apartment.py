@@ -1,11 +1,6 @@
 from collections import namedtuple
 
 
-Deal = namedtuple('Deal', ['sale', 'rent_yearplus', 'rent_yearminus', 'rent_per_day'])
-ApartmentType = namedtuple('ApartmentType', ['new', 'secondary'])
-Price = namedtuple('Price', ['min', 'max'])
-
-
 class Apartment:
     """Class to initialize apartment with his special parameters."""
 
@@ -14,23 +9,23 @@ class Apartment:
         """
         Args:
             region (:str): Name of region for search.
-                Example: Saint Petersburg.
-            deal (:tuple of :bool): Deal type of apartment. There are four boolean options that can be combined:
-                for sale or for rent 1year+, rent 1year- or per-day rent. # TODO исправить, тип может быть только один
-                Example: (False, True, True, True) -  apartment's deal type is only for rent and per-day rent.
+                Available: 'Москва', 'Санкт-Петербург'.
+            deal (:int): Deal type of apartment. There are four options:
+                Available: 1 - for sale, 2 - for rent 1year+, 3 - rent 1year, 4 - per-day rent.
             rooms (:tuple of :int): List of available number of rooms for apartment.
+                Available: 0 - studios, 1 - 1-room, 2 - 2-room, 3 - 3-room, 4 - 4-room+.
                 Example: (1,2) - apartment with 1 or 2 rooms.
-            apartment_type (:tuple of :bool): New or secondary type of apartment.
-                Example: (True, True) - apartment type is new or secondary.
+            apartment_type (:int): Apartment type.
+                Available: 0 - all apartments, 1 - new apartments, 2 - secondary apartments.
             price (:tuple of :int or Nonetype): Min and max price of apartment.
                 Example: (None, 3000000) - min price is None, max price is 3000000.
         """
 
         self.region = region
-        self.deal = Deal(*deal)
+        self.deal = deal
         self.rooms = rooms
-        self.apartment_type = ApartmentType(*apartment_type)
-        self.price = Price(*price)
+        self.apartment_type = apartment_type
+        self.price = price
         self.region = region
 
     def create_link(self):
@@ -40,17 +35,17 @@ class Apartment:
         return query
 
     def get_deal(self, query):
-        if self.deal.sale and (self.deal.rent_yearplus or self.deal.rent_yearminus or self.deal.rent_per_day):
-            raise ValueError('Incompatible arguments for object Deal.')
+        if self.deal not in [1, 2, 3, 4]:
+            raise ValueError('Incompatible arguments for Apartment.deal')
 
-        if self.deal.sale:
+        if self.deal == 1:
             return query + '&' + 'deal_type=sale'
         else:
-            if self.deal.rent_yearplus:
+            if self.deal == 2:
                 return query + '&' + 'deal_type=rent' + '&' + 'type=4'
-            elif self.deal.rent_yearminus:
+            elif self.deal == 3:
                 return query + '&' + 'deal_type=rent' + '&' + 'type=3'
-            elif self.deal.rent_per_day:
+            elif self.deal == 4:
                 return query + '&' + 'deal_type=rent' + '&' + 'type=2'
             else:
                 raise ValueError('No arguments for deal type.')
@@ -64,11 +59,11 @@ class Apartment:
         return query
 
     def get_apartment_type(self, query):
-        if not self.deal.sale or (self.apartment_type.new and self.apartment_type.secondary):
+        if self.deal != 1 or self.apartment_type == 0:
             return query
-        elif self.apartment_type.new:
+        elif self.apartment_type == 1:
             return query + '&' + 'object_type=2'
-        elif self.apartment_type.secondary:
+        elif self.apartment_type == 2:
             return query + '&' + 'object_type=1'
         else:
             raise RuntimeError
@@ -83,9 +78,9 @@ class Apartment:
         return query
 
     def get_region(self, query):
-        if self.region == 'Moscow':
+        if self.region == 'Москва':
             return query + '&' + 'region=1'
-        elif self.region == 'Saint Petersburg':
+        elif self.region == 'Санкт-Петербург':
             return query + '&' + 'region=2'
         else:
             raise ValueError('Unsupported region.')
