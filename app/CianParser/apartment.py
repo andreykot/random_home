@@ -4,8 +4,8 @@ from collections import namedtuple
 class Apartment:
     """Class to initialize apartment with his special parameters."""
 
-    def __init__(self, region: str, deal: tuple, rooms: tuple = (1, 2), apartment_type: tuple = (True, True),
-                 price: tuple = (None, None)):
+    def __init__(self, region: str, deal: int, rooms: tuple = None, apartment_type: int = None,
+                 price: tuple = None):
         """
         Args:
             region (:str): Name of region for search.
@@ -51,29 +51,34 @@ class Apartment:
                 raise ValueError('No arguments for deal type.')
 
     def get_rooms(self, query):
-        for n in list(self.rooms):
-            if isinstance(n, int) and n > 0:
-                query += '&' + 'room{}=1'.format(n)
-            else:
-                raise ValueError('Incompatible type of arguments for "rooms". Need tuple of int objects.')
+        if self.rooms:
+            for n in list(self.rooms):
+                if isinstance(n, int) and n > 0:
+                    query += '&' + 'room{}=1'.format(n)
+                else:
+                    raise ValueError('Incompatible type of arguments for "rooms". Need tuple of int objects.')
         return query
 
     def get_apartment_type(self, query):
-        if self.deal != 1 or self.apartment_type == 0:
-            return query
-        elif self.apartment_type == 1:
-            return query + '&' + 'object_type=2'
-        elif self.apartment_type == 2:
-            return query + '&' + 'object_type=1'
-        else:
-            raise RuntimeError
+        if self.apartment_type:
+            if self.deal != 1 or self.apartment_type == 0:
+                return query
+            elif self.apartment_type == 1:
+                return query + '&' + 'object_type=2'
+            elif self.apartment_type == 2:
+                return query + '&' + 'object_type=1'
+            else:
+                raise RuntimeError
+
+        return query
 
     def get_price(self, query):
-        if isinstance(self.price.min, int) and self.price.min <= self.price.max:
-            query += '&' + 'minprice=' + str(self.price.min)
+        if self.price:
+            if self.price[0]:
+                query += '&' + 'minprice=' + str(int(self.price[0]))
 
-        if isinstance(self.price.max, int) and self.price.min <= self.price.max:
-            query += '&' + 'maxprice=' + str(self.price.max)
+            if self.price[1]:
+                query += '&' + 'maxprice=' + str(int(self.price[1]))
 
         return query
 

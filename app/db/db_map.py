@@ -7,6 +7,8 @@ from datetime import datetime
 import traceback
 
 from app.configs.db import RANDOM_HOME_DB_USER, RANDOM_HOME_DB_PASSWORD, DB_SERVER_IP
+from app.CianParser.apartment import Apartment
+from app.CianParser.parser import CianParser
 
 DB = 'postgresql+psycopg2://{}:{}@{}/random_home_test'.format(RANDOM_HOME_DB_USER,
                                                               RANDOM_HOME_DB_PASSWORD,
@@ -73,7 +75,7 @@ class Query(Base):
     region = Column(String)
     deal = Column(Integer)
     rooms = Column(ARRAY(Integer))
-    apartment_type = Column(String)
+    apartment_type = Column(Integer)
     price = Column(ARRAY(Float))
     user = relationship('User', back_populates='queries', uselist=False)
 
@@ -88,6 +90,14 @@ class Query(Base):
     def __repr__(self):
         return f"<Query({self.user_id}, {self.region}, {self.deal}, {self.rooms}, {self.apartment_type}, {self.price})>"
 
+    def get_random_flat(self):
+        link = Apartment(region=self.region, deal=self.deal, rooms=self.rooms,
+                         apartment_type=self.apartment_type, price=self.price).create_link()
+        parser = CianParser(query=link)
+
+        from random import randint
+        flats = parser.get_flats(randint(1, 5))
+        return flats[randint(0,19)]
 
 class UserSettings(Base):
     """

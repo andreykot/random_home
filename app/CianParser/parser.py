@@ -42,7 +42,7 @@ def check_status_code(response):
         raise ConnectionError
 
 
-def get_flats_by_query():
+def __get_flats_by_query():
     apartment_link = Apartment(region='Saint Petersburg',
                                deal=(False, True, False, False),
                                rooms=(1, 2),

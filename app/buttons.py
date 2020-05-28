@@ -28,11 +28,43 @@ APARTMENT_TYPE = Buttons(items=['Новостройки', 'Вторичка', '�
 PRICE = dict(rent=Buttons(items=['До 20 000 руб', 'До 30 000 руб', 'До 50 000 руб']),
              sale=Buttons(items=['До 5 000 000 руб', 'До 10 000 000 руб', 'До 15 000 000 руб']))
 
+MAIN = Buttons(items=['Получить квартиру', 'Настройки поиска'])
 
-def build_replykeyboard(iterable):
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, selective=True)
-    markup.add(*iterable)
+
+def build_replykeyboard(buttons):
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+
+    if isinstance(buttons, Buttons):
+        if buttons.order and len(buttons.items) != sum(buttons.order):
+            raise ValueError("The count of buttons and their count in order list isn't equal.")
+
+        name_is_callback = True if not isinstance(buttons.items[0], (list, tuple)) else False
+        accumulated = 0
+        order = buttons.order if buttons.order else [1 for _ in range(len(buttons.items))]
+        for n in order:
+            if name_is_callback:
+                reply_buttons = [buttons.items[accumulated + i] for i in range(n)]
+            else:
+                reply_buttons = [buttons.items[accumulated + i][0] for i in range(n)]
+
+            markup.row(*reply_buttons)
+            accumulated += n
+    elif isinstance(buttons, list):
+        name_is_callback = True if not isinstance(buttons[0], (list, tuple)) else False
+        for button in buttons:
+            if name_is_callback:
+                markup.add(button)
+            else:
+                markup.add(button[0])
+    else:
+        raise TypeError('Unknown type of buttons in app.buttons.build_replykeyboard')
+
     return markup
+
+
+    #markup = types.ReplyKeyboardMarkup(resize_keyboard=True, selective=True)
+    #markup.add(*iterable)
+    #return markup
 
 
 def build_inlinekeyboard(buttons, row_width: int = 3):
