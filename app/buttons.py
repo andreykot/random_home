@@ -22,7 +22,8 @@ SEARCH_TERMS = Buttons(
 
 CITY = Buttons(items=['Москва', 'Санкт-Петербург'], order=[2])
 DEAL_TYPE = Buttons(items=['Купить', 'Снять на год и более', 'Снять до года', 'Посуточная аренда'])
-ROOMS = Buttons(items=['Студии', '1-комнатные', '2-комнатные', '3-комнатные', '4-комнатные и более'], order=[2, 2, 1])
+ROOMS = Buttons(items=['Студии', '1-комнатные', '2-комнатные', '3-комнатные', '4-комнатные и более', 'Готово!'],
+                order=[2, 2, 1, 1])
 APARTMENT_TYPE = Buttons(items=['Новостройки', 'Вторичка', 'Все'], order=[2, 1])
 PRICE = dict(rent=Buttons(items=['До 20 000 руб', 'До 30 000 руб', 'До 50 000 руб']),
              sale=Buttons(items=['До 5 000 000 руб', 'До 10 000 000 руб', 'До 15 000 000 руб']))
@@ -44,6 +45,9 @@ def build_inlinekeyboard(buttons, row_width: int = 3):
     markup = types.InlineKeyboardMarkup(row_width=row_width)
 
     if isinstance(buttons, Buttons):
+        if buttons.order and len(buttons.items) != sum(buttons.order):
+            raise ValueError("The count of buttons and their count in order list isn't equal.")
+
         name_is_callback = True if not isinstance(buttons.items[0], (list, tuple)) else False
         accumulated = 0
         order = buttons.order if buttons.order else [1 for _ in range(len(buttons.items))]

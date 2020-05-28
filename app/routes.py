@@ -11,6 +11,7 @@ def set_routes(dp):
     dp.register_message_handler(handlers.get_rooms, commands=['rooms'])
     dp.register_message_handler(handlers.get_apartment_type, commands=['type'])
     dp.register_message_handler(handlers.get_price, commands=['price'])
+    dp.register_message_handler(handlers.get_price_from_msg, regexp=r"\d+\s*-\s*\d+")
 
     dp.register_callback_query_handler(handlers.callback_search_terms_main,
                                        text='Задать критерии поиска')

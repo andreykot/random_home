@@ -1,3 +1,4 @@
+import asyncio
 import re
 import traceback
 
@@ -5,7 +6,8 @@ import aiogram.utils.markdown as md
 from aiogram import dispatcher
 from aiogram import types
 from aiogram.dispatcher import FSMContext
-from aiogram.types import ParseMode
+from aiogram.types import ParseMode, Update, callback_query
+from aiogram.utils.exceptions import MessageToDeleteNotFound
 from sqlalchemy.orm import Session
 
 from app import bot_init, buttons, filters
@@ -19,8 +21,10 @@ from app.CianParser.parser import get_flats_by_query, CianFlat
 
 async def start(message: types.Message):
     if not db_map.User.is_user(telegram_id=message.from_user.id):
-        print('ok')
-        db_map.User.insert_user(telegram_id=message.from_user.id)
+        print(message.from_user.first_name, message.from_user.last_name, 'connected')
+        db_map.User.insert_user(telegram_id=message.from_user.id,
+                                first_name=message.from_user.first_name,
+                                last_name=message.from_user.last_name)
 
     await message.reply(messages.START_MESSAGE,
                         reply_markup=buttons.build_inlinekeyboard(['Задать критерии поиска']))
@@ -78,6 +82,33 @@ async def __test_flats_searching(message: types.Message):
     await message.reply(msg, reply_markup=buttons.EMPTY_MARKUP)
 
 
+async def get_price_from_msg(message: types.Message):
+    re_parser = re.search(r"(\d+)\s*-\s*(\d+)", message.text)
+    try:
+        min_price = float(re_parser[1].replace(',', '.'))
+        max_price = float(re_parser[2].replace(',', '.'))
+    except (IndexError, ValueError):
+        await message.answer(messages.GET_PRICE_FROM_MSG_ALERT)
+        return
+
+    session = Session(bind=utils.get_engine())
+    user = session.query(db_map.User).filter(db_map.User.telegram_id == message.from_user.id).one()
+    current_query = [q for q in user.queries if q.id == user.settings.editing_query][0]
+    current_edit_msg = user.settings.current_edit_msg
+    current_query.price = [min_price, max_price]
+    utils.safe_commit(session)
+
+    for i in range(message.message_id, current_edit_msg, -1):
+        try:
+            await bot_init.bot.delete_message(chat_id=message.from_user.id, message_id=i)
+        except MessageToDeleteNotFound:
+            continue
+
+    await message.answer(messages.PRICE_ANSWER.format(int(min_price), int(max_price)))
+    await asyncio.sleep(2)
+    await bot_init.bot.delete_message(chat_id=message.from_user.id, message_id=message.message_id+1)
+
+
 # Callback handlers
 
 async def callback_search_terms_main(query: types.CallbackQuery):
@@ -119,16 +150,29 @@ async def callback_search_terms(query: types.CallbackQuery):
             reply_markup=buttons.build_inlinekeyboard(buttons.ROOMS)
         )
     elif query.data == 'apart_type':
-        await bot_init.bot.send_message(
-            text=messages.GET_APARTMENT_TYPE,
-            chat_id=query.from_user.id,
-            reply_markup=buttons.build_inlinekeyboard(buttons.APARTMENT_TYPE)
-        )
+        session = Session(bind=utils.get_engine())
+        user = session.query(db_map.User).filter(db_map.User.telegram_id == query.from_user.id).one()
+        current_query = [q for q in user.queries if q.id == user.settings.editing_query][0]
+
+        if current_query.deal == 1:
+            await bot_init.bot.send_message(
+                text=messages.GET_APARTMENT_TYPE,
+                chat_id=query.from_user.id,
+                reply_markup=buttons.build_inlinekeyboard(buttons.APARTMENT_TYPE)
+            )
+        else:
+            await query.answer(messages.APART_TYPE_ALERT, show_alert=True)
+
     elif query.data == 'price':
-        if True:  # TODO запрос в бд, чтобы узнать, покупка или аренда у пользователя.
+        session = Session(bind=utils.get_engine())
+        user = session.query(db_map.User).filter(db_map.User.telegram_id == query.from_user.id).one()
+        current_query = [q for q in user.queries if q.id == user.settings.editing_query][0]
+
+        if current_query.deal != 1:
             items = buttons.PRICE['rent']
         else:
             items = buttons.PRICE['sale']
+
         await bot_init.bot.send_message(
             text=messages.GET_PRICE,
             chat_id=query.from_user.id,
@@ -139,96 +183,73 @@ async def callback_search_terms(query: types.CallbackQuery):
 
 
 async def callback_get_city(query: types.CallbackQuery):
-    answer = None
-    if query.data == 'Москва':
-        answer = 'Москва'
-    elif query.data == 'Санкт-Петербург':
-        answer = 'Санкт-Петербург'
-    else:
-        raise TypeError("Unsupported city.")
-
-    if answer:
-        session = Session(bind=utils.get_engine())
-        user = session.query(db_map.User).filter(db_map.User.telegram_id == query.from_user.id).one()
-        current_query = [q for q in user.queries if q.id == user.settings.editing_query][0]
-        current_query.region = answer
-        utils.safe_commit(session)
+    session = Session(bind=utils.get_engine())
+    user = session.query(db_map.User).filter(db_map.User.telegram_id == query.from_user.id).one()
+    current_query = [q for q in user.queries if q.id == user.settings.editing_query][0]
+    current_query.region = query.data
+    utils.safe_commit(session)
 
     await bot_init.bot.delete_message(chat_id=query.from_user.id, message_id=query.message.message_id)
-    await query.answer(f'Город: {answer}')
+    await query.answer(f'Город: {query.data}')
 
 
 async def callback_get_deal_type(query: types.CallbackQuery):
-    answer = None
-    if query.data == 'Купить':
-        pass
-    elif query.data == 'Снять на год и более':
-        pass
-    elif query.data == 'Снять до года':
-        pass
-    elif query.data == 'Посуточная аренда':
-        pass
-    else:
-        raise TypeError("Unsupported deal type.")
-
-    if answer:
-        message_text = query.message.text
-        if re.search('Тип предложения: .+;', message_text):
-            message_text = re.sub(r'\nТип предложения: (.+);', r'', message_text)
-
-        processed_answer = "\nТип предложения: {};".format(answer)
-
-        await bot_init.bot.edit_message_text(
-            text=message_text + processed_answer,
-            chat_id=query.from_user.id,
-            message_id=query.message.message_id - 1,
-            reply_markup=buttons.build_inlinekeyboard(buttons.SEARCH_TERMS))
+    session = Session(bind=utils.get_engine())
+    user = session.query(db_map.User).filter(db_map.User.telegram_id == query.from_user.id).one()
+    current_query = [q for q in user.queries if q.id == user.settings.editing_query][0]
+    current_query.deal = filters.deal_filter(query.data)
+    utils.safe_commit(session)
 
     await bot_init.bot.delete_message(chat_id=query.from_user.id, message_id=query.message.message_id)
-    await query.answer("Тип предложения установлен!")
+    await query.answer(f"Тип: {query.data}")
 
 
 async def callback_get_rooms(query: types.CallbackQuery):
-    if query.data == 'Студии':
-        pass
-    elif query.data == '1-комнатные':
-        pass
-    elif query.data == '2-комнатные':
-        pass
-    elif query.data == '3-комнатные':
-        pass
-    elif query.data == '4-комнатные и более':
-        pass
-    else:
-        raise ValueError("Invalid rooms value.")
+    session = Session(bind=utils.get_engine())
+    user = session.query(db_map.User).filter(db_map.User.telegram_id == query.from_user.id).one()
+    current_query = [q for q in user.queries if q.id == user.settings.editing_query][0]
 
-    await bot_init.bot.delete_message(chat_id=query.from_user.id, message_id=query.message.message_id)
-    await query.answer("Количество комнат установлено!")
+    if query.data != 'Готово!':
+        selected_rooms_type = filters.rooms_filter(query.data, mode='to_int')
+
+        if not current_query.rooms:
+            result = {selected_rooms_type}
+        else:
+            result = set(current_query.rooms)
+            if selected_rooms_type not in current_query.rooms:
+                result.add(selected_rooms_type)
+            else:
+                result.remove(selected_rooms_type)
+        current_query.rooms = list(result)
+
+        utils.safe_commit(session)
+        await query.answer("Квартиры: {}".format(filters.rooms_filter(list(result), mode='array_to_str')))
+
+    else:
+        await bot_init.bot.delete_message(chat_id=query.from_user.id, message_id=query.message.message_id)
+        if current_query.rooms:
+            await query.answer("Количество комнат установлено!")
+        else:
+            await query.answer("Количество комнат не установлено")
 
 
 async def callback_get_apartment_type(query: types.CallbackQuery):
-    if query.data == 'Новостройки':
-        pass
-    elif query.data == 'Вторичка':
-        pass
-    elif query.data == 'Все':
-        pass
-    else:
-        raise TypeError("Unsupported apartment type.")
+    session = Session(bind=utils.get_engine())
+    user = session.query(db_map.User).filter(db_map.User.telegram_id == query.from_user.id).one()
+    current_query = [q for q in user.queries if q.id == user.settings.editing_query][0]
+    current_query.apartment_type = filters.apartment_type_filter(query.data)
+    utils.safe_commit(session)
 
     await bot_init.bot.delete_message(chat_id=query.from_user.id, message_id=query.message.message_id)
-    await query.answer("Тип недвижимости установлен!")
+    await query.answer("Тип недвижимости: {}".format(query.data))
 
 
 async def callback_get_price(query: types.CallbackQuery):
-    if query.data == 'До 20 000 руб':
-        pass
-    elif query.data == 'До 30 000 руб':
-        pass
-    elif query.data == 'До 50 000 руб':
-        pass
-    else:
-        raise ValueError("Invalid price value.")
+    session = Session(bind=utils.get_engine())
+    user = session.query(db_map.User).filter(db_map.User.telegram_id == query.from_user.id).one()
+    current_query = [q for q in user.queries if q.id == user.settings.editing_query][0]
+    price = list(filters.price_filter(query.data))
+    current_query.price = price
 
     await bot_init.bot.delete_message(chat_id=query.from_user.id, message_id=query.message.message_id)
-    await query.answer("Ценовой диапазон установлен!")
+    await query.answer(messages.PRICE_ANSWER.format(int(price[0]), int(price[1])))

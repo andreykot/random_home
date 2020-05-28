@@ -19,21 +19,25 @@ class User(Base):
     __tablename__ = 'users'
     id = Column(Integer, primary_key=True)
     telegram_id = Column(Integer)
-    last_use = Column(DateTime)
+    first_name = Column(String)
+    last_name = Column(String)
+    registration_date = Column(DateTime)
     queries = relationship("Query", back_populates="user")
     settings = relationship("UserSettings", uselist=False, back_populates="user")
 
-    def __init__(self, telegram_id, last_use):
+    def __init__(self, telegram_id, first_name, last_name, registration_date):
         self.telegram_id = telegram_id
-        self.last_use = last_use
+        self.first_name = first_name
+        self.last_name = last_name
+        self.registration_date = registration_date
 
     def __repr__(self):
-        return f"<User({self.telegram_id}, {self.last_use})>"
+        return f"<User({self.telegram_id}, {self.first_name}, {self.last_name}, {self.registration_date})>"
 
     @classmethod
-    def insert_user(cls, telegram_id):
+    def insert_user(cls, telegram_id, first_name, last_name):
         session = Session(bind=engine)
-        user = User(telegram_id, datetime.now())
+        user = User(telegram_id, first_name, last_name, datetime.now())
         session.add(user)
         session.commit()
         session.refresh(user)
@@ -49,9 +53,6 @@ class User(Base):
         session.close()
 
         session = Session(bind=engine)
-        print(session.query(User).all())
-        print(session.query(Query).all())
-        print(session.query(UserSettings).all())
 
     @classmethod
     def get_users(cls):
@@ -70,7 +71,7 @@ class Query(Base):
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey('users.id'))
     region = Column(String)
-    deal = Column(ARRAY(Integer))
+    deal = Column(Integer)
     rooms = Column(ARRAY(Integer))
     apartment_type = Column(String)
     price = Column(ARRAY(Float))
