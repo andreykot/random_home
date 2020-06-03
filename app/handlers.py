@@ -1,9 +1,9 @@
 import asyncio
+from random import randint
 import re
 import traceback
 
 import aiogram.utils.markdown as md
-from aiogram import dispatcher
 from aiogram import types
 from aiogram.dispatcher import FSMContext
 from aiogram.types import ParseMode, Update, callback_query
@@ -11,17 +11,16 @@ from aiogram.utils.exceptions import MessageToDeleteNotFound
 from sqlalchemy.orm import Session
 
 from app import bot_init, buttons, filters
-from app.db import db_map, utils
+from app import db
 from app.configs import messages
-from app.CianParser.parser import CianFlat
 
 
 async def start(message: types.Message):
-    if not db_map.User.is_user(telegram_id=message.from_user.id):
+    if not db.models.User.is_user(telegram_id=message.from_user.id):
         print(message.from_user.first_name, message.from_user.last_name, 'connected')
-        db_map.User.insert_user(telegram_id=message.from_user.id,
-                                first_name=message.from_user.first_name,
-                                last_name=message.from_user.last_name)
+        db. models.User.insert_user(telegram_id=message.from_user.id,
+                                   first_name=message.from_user.first_name,
+                                   last_name=message.from_user.last_name)
 
     await message.reply(messages.START_MESSAGE,
                         reply_markup=buttons.build_inlinekeyboard(['Задать критерии поиска']))
@@ -29,8 +28,8 @@ async def start(message: types.Message):
 
 async def search_terms(message: types.Message):
     try:
-        db_map.UserSettings.update_current_edit_msg(telegram_id=message.from_user.id,
-                                                    message_id=message.message_id)
+        db.models.UserSettings.update_current_edit_msg(telegram_id=message.from_user.id,
+                                                       message_id=message.message_id)
     except Exception:
         print(traceback.print_exc())
         raise NotImplementedError
@@ -40,14 +39,17 @@ async def search_terms(message: types.Message):
 
 
 async def get_random_flat(message: types.Message):
-    session = Session(bind=utils.get_engine())
-    user = session.query(db_map.User).filter(db_map.User.telegram_id == message.from_user.id).one()
+    session = Session(bind=db.models.engine)
+    user = session.query(db.models.User).filter(db.models.User.telegram_id == message.from_user.id).one()
     current_query = [q for q in user.queries if q.id == user.settings.editing_query][0]
 
-    flat = current_query.get_random_flat()
-    msg = "{}:\n{}\n\n".format(flat.title, flat.link)
+    flat = current_query.process_query()
 
-    await bot_init.bot.send_message(text=msg, chat_id=message.from_user.id)
+    if flat:
+        msg = messages.RANDOM_FLAT_ANSWER.format(flat.title, flat.link)
+        await bot_init.bot.send_message(text=msg, chat_id=message.from_user.id)
+    else:
+        await bot_init.bot.send_message(text=messages.FLAT_ERROR, chat_id=message.from_user.id)
 
 
 async def help(message: types.Message):
@@ -63,12 +65,12 @@ async def get_price_from_msg(message: types.Message):
         await message.answer(messages.GET_PRICE_FROM_MSG_ALERT)
         return
 
-    session = Session(bind=utils.get_engine())
-    user = session.query(db_map.User).filter(db_map.User.telegram_id == message.from_user.id).one()
+    session = Session(bind=db.models.engine)
+    user = session.query(db.models.User).filter(db.models.User.telegram_id == message.from_user.id).one()
     current_query = [q for q in user.queries if q.id == user.settings.editing_query][0]
     current_edit_msg = user.settings.current_edit_msg
     current_query.price = [min_price, max_price]
-    utils.safe_commit(session)
+    db.utils.safe_commit(session)
 
     for i in range(message.message_id, current_edit_msg, -1):
         try:
@@ -76,9 +78,15 @@ async def get_price_from_msg(message: types.Message):
         except MessageToDeleteNotFound:
             continue
 
-    await message.answer(messages.PRICE_ANSWER.format(int(min_price), int(max_price)))
+    await message.answer(messages.PRICE_ANSWER.format(int(min_price), int(max_price)),
+                         disable_web_page_preview=False)
     await asyncio.sleep(2)
     await bot_init.bot.delete_message(chat_id=message.from_user.id, message_id=message.message_id+1)
+
+
+async def notifications_settings(message: types.Message):
+    await message.answer(text=messages.NOTIFICATIONS_MAIN,
+                         reply_markup=buttons.build_inlinekeyboard(buttons.NOTIFICATIONS))
 
 
 # Callback handlers
@@ -93,8 +101,8 @@ async def callback_search_terms_main(query: types.CallbackQuery):
         )
 
     try:
-        db_map.UserSettings.update_current_edit_msg(telegram_id=query.from_user.id,
-                                                    message_id=query.message.message_id)
+        db.models.UserSettings.update_current_edit_msg(telegram_id=query.from_user.id,
+                                                       message_id=query.message.message_id)
     except Exception:
         print(traceback.print_exc())
         raise NotImplementedError
@@ -105,6 +113,56 @@ async def callback_search_terms_main(query: types.CallbackQuery):
         reply_markup=buttons.build_replykeyboard(buttons.MAIN))
 
     await query.answer()
+
+
+async def callback_notifications(query: types.CallbackQuery):
+    session = Session(bind=db.models.engine)
+    user = session.query(db.models.User).filter(db.models.User.telegram_id == query.from_user.id).one()
+    current_query = [q for q in user.queries if q.id == user.settings.editing_query][0]
+
+    tasks = list()
+    if re.match('Ежедневно в \d+ч', query.data):
+        hour = int(re.search('Ежедневно в (\d+)ч', query.data)[1])
+        task = db.models.Task(user_id=user.id,
+                              task_type=1,
+                              execution_hour=hour,
+                              query_id=current_query.id)
+        tasks.append(task)
+    elif query.data == 'C 10ч до 22ч каждый час':
+        for hour in range(10, 23):
+            task = db.models.Task(user_id=user.id,
+                                  task_type=1,
+                                  execution_hour=hour,
+                                  query_id=current_query.id)
+            tasks.append(task)
+    elif query.data == 'Ежедневно в 12ч, 16ч и 20ч':
+        for hour in [12, 16, 20]:
+            task = db.models.Task(user_id=user.id,
+                                  task_type=1,
+                                  execution_hour=hour,
+                                  query_id=current_query.id)
+            tasks.append(task)
+    elif query.data == 'тест: прямо сейчас':
+        from datetime import datetime
+        task = db.models.Task(user_id=user.id,
+                              task_type=1,
+                              execution_hour=datetime.now().hour,
+                              query_id=current_query.id)
+        tasks.append(task)
+
+    elif query.data == 'Отключить уведомления':
+        session.query(db.models.Task).filter(db.models.Task.user_id == user.id).delete()
+        tasks = []
+
+    else:
+        raise TypeError("Invalid query for app.handlers.callback_notifications")
+
+    if tasks:
+        session.bulk_save_objects(tasks)
+    db.utils.safe_commit(session)
+
+    await bot_init.bot.delete_message(chat_id=query.from_user.id, message_id=query.message.message_id)
+    await query.answer(messages.NOTIFICATIONS_ANSWER)
 
 
 async def callback_search_terms(query: types.CallbackQuery):
@@ -127,8 +185,8 @@ async def callback_search_terms(query: types.CallbackQuery):
             reply_markup=buttons.build_inlinekeyboard(buttons.ROOMS)
         )
     elif query.data == 'apart_type':
-        session = Session(bind=utils.get_engine())
-        user = session.query(db_map.User).filter(db_map.User.telegram_id == query.from_user.id).one()
+        session = Session(bind=db.models.engine)
+        user = session.query(db.models.User).filter(db.models.User.telegram_id == query.from_user.id).one()
         current_query = [q for q in user.queries if q.id == user.settings.editing_query][0]
 
         if current_query.deal == 1:
@@ -139,10 +197,9 @@ async def callback_search_terms(query: types.CallbackQuery):
             )
         else:
             await query.answer(messages.APART_TYPE_ALERT, show_alert=True)
-
     elif query.data == 'price':
-        session = Session(bind=utils.get_engine())
-        user = session.query(db_map.User).filter(db_map.User.telegram_id == query.from_user.id).one()
+        session = Session(bind=db.models.engine)
+        user = session.query(db.models.User).filter(db.models.User.telegram_id == query.from_user.id).one()
         current_query = [q for q in user.queries if q.id == user.settings.editing_query][0]
 
         if current_query.deal != 1:
@@ -155,35 +212,37 @@ async def callback_search_terms(query: types.CallbackQuery):
             chat_id=query.from_user.id,
             reply_markup=buttons.build_inlinekeyboard(items)
         )
+    else:
+        raise TypeError("Invalid query for app.handlers.callback_search_terms")
 
     await query.answer()
 
 
 async def callback_get_city(query: types.CallbackQuery):
-    session = Session(bind=utils.get_engine())
-    user = session.query(db_map.User).filter(db_map.User.telegram_id == query.from_user.id).one()
+    session = Session(bind=db.models.engine)
+    user = session.query(db.models.User).filter(db.models.User.telegram_id == query.from_user.id).one()
     current_query = [q for q in user.queries if q.id == user.settings.editing_query][0]
     current_query.region = query.data
-    utils.safe_commit(session)
+    db.utils.safe_commit(session)
 
     await bot_init.bot.delete_message(chat_id=query.from_user.id, message_id=query.message.message_id)
     await query.answer(f'Город: {query.data}')
 
 
 async def callback_get_deal_type(query: types.CallbackQuery):
-    session = Session(bind=utils.get_engine())
-    user = session.query(db_map.User).filter(db_map.User.telegram_id == query.from_user.id).one()
+    session = Session(bind=db.models.engine)
+    user = session.query(db.models.User).filter(db.models.User.telegram_id == query.from_user.id).one()
     current_query = [q for q in user.queries if q.id == user.settings.editing_query][0]
     current_query.deal = filters.deal_filter(query.data)
-    utils.safe_commit(session)
+    db.utils.safe_commit(session)
 
     await bot_init.bot.delete_message(chat_id=query.from_user.id, message_id=query.message.message_id)
     await query.answer(f"Тип: {query.data}")
 
 
 async def callback_get_rooms(query: types.CallbackQuery):
-    session = Session(bind=utils.get_engine())
-    user = session.query(db_map.User).filter(db_map.User.telegram_id == query.from_user.id).one()
+    session = Session(bind=db.models.engine)
+    user = session.query(db.models.User).filter(db.models.User.telegram_id == query.from_user.id).one()
     current_query = [q for q in user.queries if q.id == user.settings.editing_query][0]
 
     if query.data != 'Готово!':
@@ -199,7 +258,7 @@ async def callback_get_rooms(query: types.CallbackQuery):
                 result.remove(selected_rooms_type)
         current_query.rooms = list(result)
 
-        utils.safe_commit(session)
+        db.utils.safe_commit(session)
         await query.answer("Квартиры: {}".format(filters.rooms_filter(list(result), mode='array_to_str')))
 
     else:
@@ -211,23 +270,23 @@ async def callback_get_rooms(query: types.CallbackQuery):
 
 
 async def callback_get_apartment_type(query: types.CallbackQuery):
-    session = Session(bind=utils.get_engine())
-    user = session.query(db_map.User).filter(db_map.User.telegram_id == query.from_user.id).one()
+    session = Session(bind=db.models.engine)
+    user = session.query(db.models.User).filter(db.models.User.telegram_id == query.from_user.id).one()
     current_query = [q for q in user.queries if q.id == user.settings.editing_query][0]
     current_query.apartment_type = filters.apartment_type_filter(query.data)
-    utils.safe_commit(session)
+    db.utils.safe_commit(session)
 
     await bot_init.bot.delete_message(chat_id=query.from_user.id, message_id=query.message.message_id)
     await query.answer("Тип недвижимости: {}".format(query.data))
 
 
 async def callback_get_price(query: types.CallbackQuery):
-    session = Session(bind=utils.get_engine())
-    user = session.query(db_map.User).filter(db_map.User.telegram_id == query.from_user.id).one()
+    session = Session(bind=db.models.engine)
+    user = session.query(db.models.User).filter(db.models.User.telegram_id == query.from_user.id).one()
     current_query = [q for q in user.queries if q.id == user.settings.editing_query][0]
     price = list(filters.price_filter(query.data))
     current_query.price = price
-    utils.safe_commit(session)
+    db.utils.safe_commit(session)
 
     await bot_init.bot.delete_message(chat_id=query.from_user.id, message_id=query.message.message_id)
     await query.answer(messages.PRICE_ANSWER.format(int(price[0]), int(price[1])))

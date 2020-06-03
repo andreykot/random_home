@@ -1,5 +1,5 @@
-from collections import namedtuple
 from typing import NamedTuple
+from random import randint
 from aiogram import types
 
 
@@ -28,7 +28,14 @@ APARTMENT_TYPE = Buttons(items=['Новостройки', 'Вторичка', '�
 PRICE = dict(rent=Buttons(items=['До 20 000 руб', 'До 30 000 руб', 'До 50 000 руб']),
              sale=Buttons(items=['До 5 000 000 руб', 'До 10 000 000 руб', 'До 15 000 000 руб']))
 
-MAIN = Buttons(items=['Получить квартиру', 'Настройки поиска'])
+MAIN = Buttons(items=['Прислать квартиру', 'Уведомления', 'Настройки поиска'],
+               order=[1,2])
+
+NOTIFICATIONS = Buttons(items=[f'Ежедневно в {randint(10, 22)}ч',
+                               'C 10ч до 22ч каждый час',
+                               'Ежедневно в 12ч, 16ч и 20ч',
+                               'тест: прямо сейчас',
+                               'Отключить уведомления'])
 
 
 def build_replykeyboard(buttons):

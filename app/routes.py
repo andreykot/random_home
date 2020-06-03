@@ -5,12 +5,15 @@ def set_routes(dp):
     dp.register_message_handler(handlers.start, commands=['start'])
 
     dp.register_message_handler(handlers.get_random_flat, commands=['get'])
-    dp.register_message_handler(handlers.get_random_flat, text='Получить квартиру')
+    dp.register_message_handler(handlers.get_random_flat, text='Прислать квартиру')
     dp.register_message_handler(handlers.search_terms, commands=['search_terms'])
     dp.register_message_handler(handlers.search_terms, text='Настройки поиска')
+    dp.register_message_handler(handlers.notifications_settings, text='Уведомления')
 
     dp.register_message_handler(handlers.get_price_from_msg, regexp=r"\d+\s*-\s*\d+")
 
+    dp.register_callback_query_handler(handlers.callback_notifications,
+                                       lambda query: query.data in buttons.NOTIFICATIONS.items)
     dp.register_callback_query_handler(handlers.callback_search_terms_main,
                                        text='Задать критерии поиска')
     dp.register_callback_query_handler(handlers.callback_search_terms,
