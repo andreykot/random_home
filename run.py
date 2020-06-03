@@ -12,7 +12,7 @@ def main():
 
     loop = bot_init.dispatcher.loop
     loop.create_task(utils.update_proxies())
-    #loop.create_task(utils.execute_db_tasks(loop))
+    loop.create_task(utils.execute_db_tasks(loop))
 
     executor.start_polling(bot_init.dispatcher,
                            skip_updates=True,

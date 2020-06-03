@@ -13,6 +13,7 @@ from app.configs.messages import RANDOM_FLAT_ANSWER, FLAT_ERROR
 from app import CianParser
 from app.bot_init import bot
 
+
 DB = 'postgresql+psycopg2://{}:{}@{}/random_home_test'.format(RANDOM_HOME_DB_USER,
                                                               RANDOM_HOME_DB_PASSWORD,
                                                               DB_SERVER_IP)  #TODO test db
@@ -100,38 +101,41 @@ class Query(Base):
     def __repr__(self):
         return f"<Query({self.user_id}, {self.url}, {self.pages}, {self.region}, {self.deal}, {self.rooms}, {self.apartment_type}, {self.price})>"
 
-    def process_query(self):
-        page = randint(1, self.pages) if (self.url and self.pages) else None
-        session = Session(bind=engine)
-        if not self.url:
-            self.url = CianParser.parser.Apartment(region=self.region, deal=self.deal, rooms=self.rooms,
-                                                   apartment_type=self.apartment_type, price=self.price).create_link()
+    def process_query(self, session=None):
+        if not session:
+            session = Session(bind=engine)
 
-        parser = CianParser.parser.Parser(db_query=self, db_session=session)
-        parser.process(page=page)
-        self.pages = parser.pages
+        self.url = CianParser.parser.Apartment(region=self.region, deal=self.deal, rooms=self.rooms,
+                                               apartment_type=self.apartment_type, price=self.price).create_link()
+        repeated_flat, random_flat = True, None
+        while repeated_flat:
+            parser = CianParser.parser.Parser(url=self.url)
+            page = randint(1, self.pages) if (self.url and self.pages) else None
+            random_flat, self.pages = parser.process(page=page)
+            repeated_flat = self.is_repeated_flat(session, random_flat)
 
-        if self.is_repeated_flat(session, parser):
-            return None
-        else:
-            session.add(Flat(query_id=self.id, url=parser.random_flat.link))
-            current_query = session.query(Query).filter(Query.id == self.id).one()
-            current_query.url = self.url
-            current_query.pages = self.pages
-            session.commit()
-            session.close()
-            return parser.random_flat
+        session.add(Flat(query_id=self.id, url=random_flat.link))
+        current_query = session.query(Query).filter(Query.id == self.id).one()
+        current_query.url = self.url
+        current_query.pages = self.pages
+        session.commit()
+        return random_flat
 
     @staticmethod
-    def is_repeated_flat(session: Session, parser):
+    def is_repeated_flat(session: Session, random_flat) -> bool:
         repeated = 0
-        while repeated < parser.flats_per_page:
-            is_db_flat = session.query(Flat).filter(Flat.url == parser.random_flat.link).all()
+        while repeated < CianParser.parser.FLATS_PER_PAGE:
+            is_db_flat = session.query(Flat).\
+                filter(Flat.url == random_flat.link).\
+                all()
+
             if is_db_flat:
                 repeated += 1
             else:
                 return False
+
         return True
+
 
 class UserSettings(Base):
     """
@@ -212,7 +216,7 @@ class ProxyList(Base):
         safe_commit(session)
 
         old_proxies = set([proxy.address for proxy in session.query(ProxyList).all()])
-        new_proxies = CianParser.proxy_processor.get_proxies_from_source()
+        new_proxies = CianParser.proxy_processor.get_proxies_from_source_txt()
         proxy_objects = [ProxyList(proxy) for proxy in new_proxies if proxy not in old_proxies]
 
         session = Session(bind=engine)

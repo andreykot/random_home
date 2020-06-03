@@ -13,14 +13,12 @@ from .proxy_processor import connect_to_cian
 CianFlat = namedtuple('CianFlat', ['link', 'title'])
 
 
-class Parser:
-    flats_per_page = 28
+FLATS_PER_PAGE = 28
 
-    def __init__(self, db_query: db.models.Query, db_session: Session):
-        self.query = db_query
-        self.session = db_session
-        self.random_flat = None
-        self.pages = None
+
+class Parser:
+    def __init__(self, url: str):
+        self.url = url
 
     @staticmethod
     def get_amount(content: str, soup: BeautifulSoup = None) -> (int, None):
@@ -36,21 +34,26 @@ class Parser:
             print(traceback.print_exc())
 
     def process(self, page=None):
-        html = connect_to_cian(session=self.session, query=self.query, page=page)
+        html = connect_to_cian(url=self.url, page=page)
 
         if not html:
             raise requests.exceptions.ConnectionError
 
-        flats_from_page = self.get_flats_from_page(html=html)
-        self.random_flat = self.get_random_flat(flats_from_page)
+        soup = self.create_parse_soup(html)
 
-    def get_flats_from_page(self, html: requests.Response = None) -> list:
-        if not html:
-            html = connect_to_cian(session=self.session, query=self.query)
-        soup = BeautifulSoup(html.content, 'lxml')
+        estimated_pages = self.get_amount(content=html.content, soup=soup) // FLATS_PER_PAGE
+        pages = estimated_pages if estimated_pages <= 54 else 54
+        page = page if page <= pages else 54
 
-        self.pages = 10  # TODO self.get_amount(content=html.content, soup=soup) // self.flats_per_page
+        flats_from_page = self.get_flats_from_page(soup)
+        random_flat = self.get_random_flat(flats_from_page)
+        return random_flat, pages
 
+    @staticmethod
+    def create_parse_soup(html: requests.Response):
+        return BeautifulSoup(html.content, 'lxml')
+
+    def get_flats_from_page(self, soup: BeautifulSoup) -> list:
         offers = soup.find('div', attrs={'data-name': "Offers"})
 
         flats = list()
@@ -68,9 +71,9 @@ class Parser:
         return flats
 
     def get_random_flat(self, flats: list) -> CianFlat:
-        return flats[randint(0, self.flats_per_page - 1)]
+        return flats[randint(0, FLATS_PER_PAGE - 1)]
 
-"currency=2&deal_type=rent&engine_version=2&maxprice=20000&offer_type=flat&p=1&region=2&type=4"
+
 class Apartment:
     """Class to initialize apartment with his special parameters."""
 
@@ -83,7 +86,7 @@ class Apartment:
             deal (:int): Deal type of apartment. There are four options:
                 Available: 1 - for sale, 2 - for rent 1year+, 3 - rent 1year, 4 - per-day rent.
             rooms (:tuple of :int): List of available number of rooms for apartment.
-                Available: 0 - studios, 1 - 1-room, 2 - 2-room, 3 - 3-room, 4 - 4-room+.
+                Available: 9 - studios, 1 - 1-room, 2 - 2-room, 3 - 3-room, 4 - 4-room+.
                 Example: (1,2) - apartment with 1 or 2 rooms.
             apartment_type (:int): Apartment type.
                 Available: 0 - all apartments, 1 - new apartments, 2 - secondary apartments.
@@ -122,11 +125,11 @@ class Apartment:
 
     def get_rooms(self, query):
         if self.rooms:
-            for n in list(self.rooms):
-                if isinstance(n, int) and n > 0:
+            for n in self.rooms:
+                if isinstance(n, int):
                     query += '&' + 'room{}=1'.format(n)
                 else:
-                    raise ValueError('Incompatible type of arguments for "rooms". Need tuple of int objects.')
+                    raise ValueError('Incompatible type of arguments for "rooms". Need iterable of int.')
         return query
 
     def get_apartment_type(self, query):

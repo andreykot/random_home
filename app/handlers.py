@@ -43,7 +43,8 @@ async def get_random_flat(message: types.Message):
     user = session.query(db.models.User).filter(db.models.User.telegram_id == message.from_user.id).one()
     current_query = [q for q in user.queries if q.id == user.settings.editing_query][0]
 
-    flat = current_query.process_query()
+    flat = current_query.process_query(session)
+    session.close()
 
     if flat:
         msg = messages.RANDOM_FLAT_ANSWER.format(flat.title, flat.link)

@@ -1,7 +1,7 @@
 from collections import deque
 import requests
 import re
-import random
+from random import randint, shuffle
 from sqlalchemy.orm import Session
 from fake_useragent import UserAgent
 
@@ -11,40 +11,44 @@ from app import db
 PROXIES_SOURCE = "https://raw.githubusercontent.com/clarketm/proxy-list/master/proxy-list.txt"
 
 
-def get_proxies_from_source():
+def get_proxies_from_source_txt():
     try:
         r = requests.get(PROXIES_SOURCE)
     except requests.ConnectionError:
         return []
 
     proxies = re.findall(r"\d+\.\d+\.\d+\.\d+:\d+", r.content.decode())
-    random.shuffle(proxies)
+    shuffle(proxies)
     return proxies
 
 
-def connect_to_cian(session: Session, query: db.models.Query, page: int = None) -> (requests.Response, None):
-    proxies = deque(get_proxies_from_db(session))
-    connection_attempts = 0
-    while connection_attempts < 15:
-        connection_attempts += 1
-        current_proxy = proxies.popleft()
+def connect_to_cian(url: str, page: int = None) -> (requests.Response, None):
+    session = Session(bind=db.models.engine)
+    answer = None
+    for current_proxy in get_proxies_from_db(session, 20):
         try:
-            url = query.url + '&page={}'.format(page) if page else query.url
+            url_page = url + '&page={}'.format(page) if page else url
             proxy = {'http': 'http://' + current_proxy.address}
 
             ua = UserAgent()
-            html = requests.get(url,
+            html = requests.get(url_page,
                                 headers={'User-Agent': ua.random},
                                 proxies=proxy,
                                 timeout=5)
             if check_response(html):
-                return html
+                answer = html
+                break
 
         except (requests.exceptions.ConnectionError, requests.exceptions.InvalidProxyURL,
                 requests.exceptions.ReadTimeout):
-            current_proxy.available = False
+            session.query(db.models.ProxyList).\
+                filter(db.models.ProxyList.id == current_proxy.id).\
+                update({'available': False})
             print(f"{current_proxy} is not available.")
             session.commit()
+
+    session.close()
+    return answer
 
 
 def check_response(response: requests.Response):
@@ -58,12 +62,15 @@ def check_response(response: requests.Response):
         raise requests.exceptions.ConnectionError
 
 
-def get_proxies_from_db(session: Session) -> list:
+def get_proxies_from_db(session: Session, n: int = 20):
     proxies = session.query(db.models.ProxyList).\
         filter(db.models.ProxyList.available).\
         all()
     if proxies:
-        return proxies
+        start = randint(0, len(proxies) - n)
+        end = start + n
+        for i in range(start, end):
+            yield proxies[i]
     else:
         raise ValueError("Couldn't find proxies in DB")
 

@@ -22,14 +22,14 @@ def deal_filter(data):
 
 def rooms_filter(data, mode):
     if mode == 'to_int':
-        to_int = {'Студии': 0, '1-комнатные': 1, '2-комнатные': 2, '3-комнатные': 3, '4-комнатные и более': 4}
+        to_int = {'Студии': 9, '1-комнатные': 1, '2-комнатные': 2, '3-комнатные': 3, '4-комнатные и более': 4}
         if data in to_int:
             return to_int[data]
         else:
             raise ValueError("Invalid rooms value.")
 
     elif mode == 'array_to_str':
-        array_to_str = {0: 'студии', 1: '1к', 2: '2к', 3: '3к', 4: '4к+'}
+        array_to_str = {9: 'студии', 1: '1к', 2: '2к', 3: '3к', 4: '4к+'}
         result = [array_to_str[item] for item in data if item in array_to_str]
         if len(data) != len(result):
             raise ValueError("Invalid rooms value.")
