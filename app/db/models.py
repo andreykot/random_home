@@ -1,5 +1,3 @@
-import asyncio
-from sqlalchemy import update, delete
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean, Float, ARRAY, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Session, relationship
@@ -9,9 +7,7 @@ from random import randint
 import traceback
 
 from app.configs.db import RANDOM_HOME_DB_USER, RANDOM_HOME_DB_PASSWORD, DB_SERVER_IP
-from app.configs.messages import RANDOM_FLAT_ANSWER, FLAT_ERROR
-from app import CianParser
-from app.bot_init import bot
+from app.tools import CianWebParser, proxy_processor
 
 
 DB = 'postgresql+psycopg2://{}:{}@{}/random_home_test'.format(RANDOM_HOME_DB_USER,
@@ -105,11 +101,11 @@ class Query(Base):
         if not session:
             session = Session(bind=engine)
 
-        self.url = CianParser.parser.Apartment(region=self.region, deal=self.deal, rooms=self.rooms,
-                                               apartment_type=self.apartment_type, price=self.price).create_link()
+        self.url = CianWebParser.parser.Apartment(region=self.region, deal=self.deal, rooms=self.rooms,
+                                                         apartment_type=self.apartment_type, price=self.price).create_link()
         repeated_flat, random_flat = True, None
         while repeated_flat:
-            parser = CianParser.parser.Parser(url=self.url)
+            parser = CianWebParser.parser.Parser(url=self.url)
             page = randint(1, self.pages) if (self.url and self.pages) else None
             random_flat, self.pages = parser.process(page=page)
             repeated_flat = self.is_repeated_flat(session, random_flat)
@@ -124,7 +120,7 @@ class Query(Base):
     @staticmethod
     def is_repeated_flat(session: Session, random_flat) -> bool:
         repeated = 0
-        while repeated < CianParser.parser.FLATS_PER_PAGE:
+        while repeated < CianWebParser.parser.FLATS_PER_PAGE:
             is_db_flat = session.query(Flat).\
                 filter(Flat.url == random_flat.link).\
                 all()
@@ -216,7 +212,7 @@ class ProxyList(Base):
         safe_commit(session)
 
         old_proxies = set([proxy.address for proxy in session.query(ProxyList).all()])
-        new_proxies = CianParser.proxy_processor.get_proxies_from_source_txt()
+        new_proxies = proxy_processor.get_proxies_from_source_txt()
         proxy_objects = [ProxyList(proxy) for proxy in new_proxies if proxy not in old_proxies]
 
         session = Session(bind=engine)

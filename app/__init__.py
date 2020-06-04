@@ -1,4 +1,4 @@
-from . import CianParser
+from .tools import CianWebParser
 from . import db
 
 

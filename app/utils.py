@@ -27,7 +27,6 @@ async def update_proxies():
 
 async def execute_db_tasks(bot_loop):
     def get_flats():
-        #queue = Queue()
         res = [task.execute_task() for task in tasks]
         return res
 

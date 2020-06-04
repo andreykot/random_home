@@ -7,7 +7,7 @@ from bs4 import BeautifulSoup
 from sqlalchemy.orm import Session
 
 from app import db
-from .proxy_processor import connect_to_cian
+from app.tools import proxy_processor
 
 
 CianFlat = namedtuple('CianFlat', ['link', 'title'])
@@ -17,6 +17,8 @@ FLATS_PER_PAGE = 28
 
 
 class Parser:
+    """"Provides parsing of CIAN webpage."""
+
     def __init__(self, url: str):
         self.url = url
 
@@ -34,7 +36,7 @@ class Parser:
             print(traceback.print_exc())
 
     def process(self, page=None):
-        html = connect_to_cian(url=self.url, page=page)
+        html = proxy_processor.connect_to_cian(url=self.url, page=page)
 
         if not html:
             raise requests.exceptions.ConnectionError
@@ -164,17 +166,5 @@ class Apartment:
             raise ValueError('Unsupported region.')
 
 
-def safe_commit(session):
-    try:
-        session.commit()
-    except Exception:
-        print(traceback.format_exc())
-        session.rollback()
-    finally:
-        session.close()
-
-
 if __name__ == '__main__':
-    parser = Parser(r'https://cian.ru/cat.php?&deal_type=rent&type=3&region=2&room1=1&room2=1&minprice=0&maxprice=49900')
-    flats = parser.get_flats(5)
-    print(*flats, sep='\n')
+    pass
