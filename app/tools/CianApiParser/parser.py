@@ -92,7 +92,7 @@ class QueryConstructor:
     @property
     def type(self):
         if self._type == 'flatsale':
-            return {'_type': 'flatsale', "for_day": {"type": "terms", "value": "!1"}}
+            return {'_type': 'flatsale'}
         elif self._type == 'flatrent':
             return {'_type': 'flatrent', "for_day": {"type": "terms", "value": "!1"}}
         elif self._type == 'flatrent_24h':
