@@ -4,10 +4,6 @@ import traceback
 from .models import DB, Base
 
 
-def get_engine():
-    return create_engine(DB)
-
-
 def send_sql_query(query: str, get_result: bool):
     pass
 

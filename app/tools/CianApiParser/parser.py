@@ -1,4 +1,5 @@
 import json
+from random import randint
 import re
 import requests
 
@@ -6,27 +7,15 @@ from app.tools import proxy_processor
 
 
 API = "https://api.cian.ru/search-engine/v1/search-offers-mobile-site/"
-
-
-class ApiManager:
-    def __init__(self):
-        pass
-
-    @classmethod
-    def get_data(cls, json_query: dict) -> dict:
-        response = requests.post(API, json=json_query)
-        print("response code: ", response.status_code)
-        if response.status_code == 200:
-            return json.loads(response.content)
-        else:
-            raise ConnectionError
+FLATS_PER_PAGE = 28
 
 
 class QueryConstructor:
     def __init__(self, page: int, region: list, type: str,
                  building_status: int = None,
-                 price: tuple = None,
+                 price: list = None,
                  room: list = None,
+                 underground_id: int = None,
                  foot_min: int = None,
                  total_area: tuple = None,
                  living_area: tuple = None,
@@ -42,10 +31,11 @@ class QueryConstructor:
             page (:int): Номер страницы.
             region (:list of int): Идентификатор региона (1 - Москва, 2 - Санкт-Петербург).
             type (:str): Тип предложения ('flatsale', 'flatrent', 'flatrent_24h').
-            building_status (:int): Тип жилья.
+            building_status (:int): Тип жилья. (новостройки - 2, вторичка - 1)
             price (:tuple of int): Диапазон цен.
             room (:list of int): Количество комнат (может быть несколько вариантов).
                 Пример: [1,2,9] - 1к, 2к и студии.
+            underground_id (:int): Кодовый номер станции метро согласно post-запросам ЦИАН.
             foot_min (:int): Количество минут пешком до ближайшего метро.
             total_area (:tuple int): Общая площадь (м2).
             living_area (:tuple of int): Жилая площать (от и до, м2).
@@ -63,6 +53,10 @@ class QueryConstructor:
         self._building_status = building_status
         self._price = price
         self._room = room
+
+        #self._geo = dict()
+        #self._geo.update({'underground_id': None})
+
         self._foot_min = foot_min
         self._total_area = total_area
         self._living_area = living_area
@@ -74,7 +68,7 @@ class QueryConstructor:
         self._currency = currency
         self._engine_version = engine_version
 
-    def create(self):
+    def create_json_query(self):
         args = dict()
         for attr, value in self.__dict__.items():
             if value:
@@ -106,11 +100,20 @@ class QueryConstructor:
 
     @property
     def price(self):
-        return {"price": {"type": "range", "value": {"gte": self._price[0], "lte": self._price[1]}}}
+        return {"price": {"type": "range", "value": {"gte": int(self._price[0]), "lte": int(self._price[1])}}}
 
     @property
     def room(self):
         return {'room': {"type": "terms", "value": self._room}}
+
+    @property
+    def geo(self):
+        geo = {"geo": {"type": "geo", "value": []}}
+        for key, item in self._geo.items():
+            if key == 'underground_id' and self._geo['underground_id']:
+                geo['geo']['value'].append({"type": "underground", "id": self._geo['underground_id']})
+
+        return geo
 
     @property
     def foot_min(self):
@@ -156,53 +159,124 @@ class QueryConstructor:
 class CianFlat:
     def __init__(self, api_data: dict):
         self.api_data = api_data
+        try:
+            self.id: int = api_data['id']
+            self.cian_id: int = api_data['cianId']
+            self.price: int = api_data['price']['value']
+            self.description: str = api_data['description']
+            self.coordinates: dict = {'lat': api_data['geo']['coordinates']['lat'],
+                                      'lng': api_data['geo']['coordinates']['lng']}
+            self.phone: str = f"{api_data['phones'][0] if len(api_data['phones']) > 0 else ''}"
 
-        self.id: int = api_data['id']
-        self.price: int = api_data['price']['value']
-        self.description: str = api_data['description']
-        self.address: str = \
-            f"{api_data['geo']['address'][0]}, {api_data['geo']['address'][1]} {api_data['geo']['address'][2]}"
-        self.coordinates: tuple = (api_data['geo']['coordinates']['lat'], api_data['geo']['coordinates']['lng'])
+            self.__undergrounds: list = api_data['geo']['undergrounds']
+            self.__info: dict = api_data['features']
 
-        self.__undergrounds = api_data['geo']['undergrounds']
-        self.__info = api_data['features']
+        except (KeyError, IndexError):
+            print(api_data)
+            raise RuntimeError("Couldn't parse data of this flat.")
 
     @property
-    def url(self):
+    def url(self) -> str:
         return f"https://cian.ru/sale/flat/{self.id}/"
 
     @property
-    def info(self):
-        return "{}, {}, {}".format(self.__info['floorInfo'],
-                                   self.__info['objectType'],
-                                   self.__info['totalArea'].replace(u'\xa0', ' '))
+    def address(self) -> dict:
+        city, street, house = None, None, None
+        for item in self.api_data['geo']['address']:
+            if item['key'] == 'location':
+                city = item['value']
+            if item['key'] == 'street':
+                street = item['value']
+            if item['key'] == 'house':
+                house = item['value']
+        return {'city': city, 'street': street, 'house': house}
 
     @property
-    def underground(self):
+    def info(self) -> dict:
+        info = dict()
+        if 'floorInfo' in self.api_data['features']:
+            info.update({'floor': self.api_data['features']['floorInfo']})
+        if 'objectType' in self.api_data['features']:
+            info.update({'object_type': self.api_data['features']['objectType']})
+        if 'totalArea' in self.api_data['features']:
+            info.update({'area': self.api_data['features']['totalArea'].replace(u'\xa0', ' ')})
+        return info
+
+    @property
+    def underground(self) -> dict:
         if self.__undergrounds:
-            nearest_by_transport, nearest_by_walk = (None, float('inf')), (None, float('inf'))
+            nearest_by_transport, nearest_by_walk = (None, float('inf'), None), (None, float('inf'), None)
             for station in self.__undergrounds:
-                timestr = station['time'].replace(u'\xa0', ' ')
-                time = int(re.search(r'\d+', timestr)[0])
+                raw_time = re.search(r'(\d+) (\w+)\.', station['time'].replace(u'\xa0', ' '))
+                time, units = int(raw_time[1]), raw_time[2]
 
                 if station['transportType'] == 'transport' and time < nearest_by_transport[1]:
-                    text = f"Транспортом до ст. {station['name']} - {timestr}"
-                    nearest_by_transport = (text, time)
+                    nearest_by_transport = (station['name'], time, units)
 
                 if station['transportType'] == 'walk' and time < nearest_by_walk[1]:
-                    text = f"Пешком до ст. {station['name']} - {timestr}"
-                    nearest_by_walk = (text, time)
+                    nearest_by_walk = (station['name'], time, units)
 
-            return  nearest_by_transport, nearest_by_walk
+            if nearest_by_walk[0]:
+                return {'name': nearest_by_walk[0],
+                        'time': nearest_by_walk[1],
+                        'units': nearest_by_walk[2],
+                        'type': 'walk'}
+            elif nearest_by_transport[0]:
+                return {'name': nearest_by_transport[0],
+                        'time': nearest_by_transport[1],
+                        'units': nearest_by_transport[2],
+                        'type': 'transport'}
+            else:
+                return {'name': None, 'time': None, 'units': None, 'type': None}
         else:
-            raise ValueError('attr _undergrounds is empty.')
+            return {'name': None, 'time': None, 'units': None, 'type': None}
+
+
+class ApiManager:
+    def __init__(self, query: QueryConstructor):
+        self.query = query
+        self.data = None
+        self.init()
+
+    def init(self):
+        json_query = json.dumps(self.query.create_json_query()).encode('utf8')
+        response = proxy_processor.post_cian(json_query=json_query)
+        response = requests.post(API, data=json_query)
+        print(response.status_code)
+        if response.status_code == 200:
+            self.data = json.loads(response.content)
+        else:
+            raise RuntimeError
+
+    def get_random_flat(self):
+        n = randint(0, 27)
+        if 'offers' in self.data:
+            flat = CianFlat(api_data=self.data['offers'][n])
+            return flat
+        else:
+            return None
 
 
 if __name__ == '__main__':
     q = QueryConstructor(page=3, region=[2], type='flatsale')
-    args = q.create()
-    data = ApiManager.get_data(json_query=args)
-    print(data.keys())
+    print(q.create_json_query())
+    #data = ApiManager(query=q)
+    #flat = data.data
+    #print(flat)
+    #print(flat.url,
+    #      flat.address,
+    #      flat.info,
+    #     flat.underground)
+    newConditions = {'jsonQuery': {'page': {'type': 'term', 'value': 3}, 'region': {'type': 'terms', 'value': [2]}, '_type': 'flatsale', 'currency': {'type': 'term', 'value': 2}, 'engine_version': {'type': 'term', 'value': 2}}}
+    from urllib.request import Request, urlopen
+
+    params = json.dumps(newConditions).encode('utf8')
+    #req = Request(API, data=params, headers={'content-type': 'application/json'})
+    req = requests.post(API, data=params)
+    print(req.status_code)
+    print(req.content)
+    #response = urlopen(req)
+    #print(response.read().decode('utf8'))
 
 
 

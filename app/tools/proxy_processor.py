@@ -2,10 +2,11 @@ from collections import deque
 import requests
 import re
 from random import randint, shuffle
+import time
 from sqlalchemy.orm import Session
 from fake_useragent import UserAgent
 
-from app import db
+from app import db, tools
 
 
 PROXIES_SOURCE = "https://raw.githubusercontent.com/clarketm/proxy-list/master/proxy-list.txt"
@@ -17,12 +18,12 @@ def get_proxies_from_source_txt():
     except requests.ConnectionError:
         return []
 
-    proxies = re.findall(r"\d+\.\d+\.\d+\.\d+:\d+", r.content.decode())
+    proxies = re.findall(r"(\d+\.\d+\.\d+\.\d+:\d+).*-S!", r.content.decode())
     shuffle(proxies)
     return proxies
 
 
-def connect_to_cian(url: str, page: int = None) -> (requests.Response, None):
+def get_cian(url: str, page: int = None) -> (requests.Response, None):
     session = Session(bind=db.models.engine)
     answer = None
     for current_proxy in get_proxies_from_db(session, 20):
@@ -35,7 +36,7 @@ def connect_to_cian(url: str, page: int = None) -> (requests.Response, None):
                                 headers={'User-Agent': ua.random},
                                 proxies=proxy,
                                 timeout=5)
-            if check_response(html):
+            if check_response_get(html):
                 answer = html
                 break
 
@@ -51,7 +52,51 @@ def connect_to_cian(url: str, page: int = None) -> (requests.Response, None):
     return answer
 
 
-def check_response(response: requests.Response):
+def post_cian(json_query) -> (requests.Response, None):
+    session = Session(bind=db.models.engine)
+    answer = None
+    for current_proxy in get_proxies_from_db(session, 20):
+        try:
+            proxy = {'http': 'http://' + current_proxy.address}
+            print(proxy)
+
+            ua = UserAgent()
+            html = requests.post(tools.CianApiParser.parser.API,
+                                 headers={'User-Agent': ua.random},
+                                 timeout=5,
+                                 proxies=proxy,
+                                 data=json_query)
+            print(html.status_code)
+            if check_response_post(html):
+                answer = html
+                break
+
+        except (requests.exceptions.ConnectionError, requests.exceptions.InvalidProxyURL,
+                requests.exceptions.ReadTimeout) as e:
+            print(e)
+            session.query(db.models.ProxyList).\
+                filter(db.models.ProxyList.id == current_proxy.id).\
+                update({'available': False})
+            print(f"{current_proxy.address} is not available.")
+            session.commit()
+            time.sleep(5)
+
+    session.close()
+    return answer
+
+
+def check_response_get(response: requests.Response):
+    if re.search(r'[cC]aptcha', response.content.decode()):
+        raise requests.exceptions.InvalidProxyURL
+    elif response.status_code == 200:
+        return True
+    elif response.status_code == 404:
+        raise requests.exceptions.InvalidURL
+    else:
+        raise requests.exceptions.ConnectionError
+
+
+def check_response_post(response: requests.Response):
     if re.search(r'[cC]aptcha', response.content.decode()):
         raise requests.exceptions.InvalidProxyURL
     elif response.status_code == 200:
@@ -75,13 +120,17 @@ def get_proxies_from_db(session: Session, n: int = 20):
         raise ValueError("Couldn't find proxies in DB")
 
 
-def test_check_response():
-    import time
-    while True:
-        r = requests.get(r"https://spb.cian.ru/novostrojki/")
-        print(check_response(r))
-        #time.sleep(0.1)
+def test():
+    post_cian({'jsonQuery': {'page': {'type': 'term', 'value': 3},
+  'region': {'type': 'terms', 'value': [2]},
+  '_type': 'flatsale',
+  'for_day': {'type': 'terms', 'value': '!1'},
+  'price': {'type': 'range', 'value': {'gte': 0, 'lte': 4000000}},
+  'room': {'type': 'terms', 'value': [1]},
+  'currency': {'type': 'term', 'value': 2},
+  'engine_version': {'type': 'term', 'value': 2}}})
 
 
 if __name__ == '__main__':
-    test_check_response()
+    #test()
+    print(get_proxies_from_source_txt())

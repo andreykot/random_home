@@ -7,7 +7,7 @@ from random import randint
 import traceback
 
 from app.configs.db import RANDOM_HOME_DB_USER, RANDOM_HOME_DB_PASSWORD, DB_SERVER_IP
-from app.tools import CianWebParser, proxy_processor
+from app.tools import CianApiParser, proxy_processor
 
 
 DB = 'postgresql+psycopg2://{}:{}@{}/random_home_test'.format(RANDOM_HOME_DB_USER,
@@ -75,8 +75,8 @@ class Query(Base):
     user_id = Column(Integer, ForeignKey('users.id'))
     url = Column(String)
     pages = Column(Integer)
-    region = Column(String)
-    deal = Column(Integer)
+    region = Column(ARRAY(Integer))
+    deal = Column(String)
     rooms = Column(ARRAY(Integer))
     apartment_type = Column(Integer)
     price = Column(ARRAY(Float))
@@ -101,35 +101,67 @@ class Query(Base):
         if not session:
             session = Session(bind=engine)
 
-        self.url = CianWebParser.parser.Apartment(region=self.region, deal=self.deal, rooms=self.rooms,
-                                                         apartment_type=self.apartment_type, price=self.price).create_link()
-        repeated_flat, random_flat = True, None
-        while repeated_flat:
-            parser = CianWebParser.parser.Parser(url=self.url)
-            page = randint(1, self.pages) if (self.url and self.pages) else None
-            random_flat, self.pages = parser.process(page=page)
-            repeated_flat = self.is_repeated_flat(session, random_flat)
+        page = randint(1, self.pages) if self.pages else 1
 
-        session.add(Flat(query_id=self.id, url=random_flat.link))
-        current_query = session.query(Query).filter(Query.id == self.id).one()
-        current_query.url = self.url
-        current_query.pages = self.pages
+        constructor = CianApiParser.parser.QueryConstructor(page=page,
+                                                            region=self.region,
+                                                            type=self.deal,
+                                                            room=self.rooms,
+                                                            building_status=self.apartment_type,
+                                                            price=self.price)
+        #repeated_flat, flat = True, None
+        print(constructor.create_json_query())
+
+        api_manager = CianApiParser.parser.ApiManager(query=constructor)
+        flat = api_manager.get_random_flat()
+
+        flat_obj = Flat(query_id=self.id,
+                        url=flat.url,
+                        cian_id=flat.cian_id,
+                        price=flat.price,
+                        coordinates=[flat.coordinates['lat'], flat.coordinates['lng']],
+                        city=flat.address['city'],
+                        street=flat.address['street'],
+                        house=flat.address['house'],
+                        object_type=flat.info['object_type'],
+                        floor=flat.info['floor'],
+                        area=flat.info['area'],
+                        phone=flat.phone,
+                        description=flat.description
+                 )
+        session.add(flat_obj)
         session.commit()
-        return random_flat
+        session.refresh(flat_obj)
+
+        session.add(
+            FlatUnderground(
+                flat_id=flat_obj.id,
+                cian_flat_id=flat.cian_id,
+                name=flat.underground['name'],
+                time=flat.underground['time'],
+                timeunits=flat.underground['units'],
+                type=flat.underground['type']
+            )
+        )
+        session.query(Query).\
+            filter(Query.id == self.id).\
+            update({'url': flat.url,
+                    'pages': api_manager.data['offersCount'] // 28 if (api_manager.data['offersCount'] // 28) <= 54 else 54})
+        session.commit()
+        return flat
 
     @staticmethod
     def is_repeated_flat(session: Session, random_flat) -> bool:
         repeated = 0
-        while repeated < CianWebParser.parser.FLATS_PER_PAGE:
+        while repeated < CianApiParser.parser.FLATS_PER_PAGE:
             is_db_flat = session.query(Flat).\
-                filter(Flat.url == random_flat.link).\
+                filter(Flat.url == random_flat.url).\
                 all()
 
             if is_db_flat:
                 repeated += 1
             else:
                 return False
-
         return True
 
 
@@ -182,14 +214,63 @@ class Flat(Base):
     id = Column(Integer, primary_key=True)
     query_id = Column(Integer, ForeignKey('queries.id'))
     url = Column(String)
-    #coords
+    cian_id = Column(Integer)
+    price = Column(Integer)
+    coordinates = Column(ARRAY(Float))
+    city = Column(String)
+    street = Column(String)
+    house = Column(String)
+    object_type = Column(String)
+    floor = Column(String)
+    area = Column(String)
+    phone = Column(String)
+    description = Column(String)
+    undergrounds = relationship('FlatUnderground', back_populates='flat')
 
-    def __init__(self, query_id, url):
+    def __init__(self, query_id: int, url: str, cian_id: int, price: int,
+                 coordinates: list, city: str, street: str = None, house: str = None,
+                 object_type: str = None, floor: str = None, area: str = None,
+                 phone: str = None, description :str = None):
         self.query_id = query_id
         self.url = url
+        self.cian_id = cian_id
+        self.price = price
+        self.coordinates = coordinates
+        self.city = city
+        self.street = street
+        self.house = house
+        self.object_type = object_type
+        self.floor = floor
+        self.area = area
+        self.phone = phone
+        self.description = description
 
     def __repr__(self):
-        return f"<Flat({self.query_id}, {self.url})>"
+        return "Flat " + ", ".join(self.__dict__.items())
+
+
+class FlatUnderground(Base):
+    __tablename__ = "flat_underground"
+    id = Column(Integer, primary_key=True)
+    flat_id = Column(Integer, ForeignKey('flats.id'))
+    cian_flat_id = Column(Integer)
+    name = Column(String)
+    time = Column(Integer)
+    timeunits = Column(String)
+    type = Column(String)
+    flat = relationship('Flat', back_populates='undergrounds', uselist=False)
+
+    def __init__(self, flat_id, cian_flat_id, name, time, timeunits, type):
+        self.flat_id = flat_id
+        self.cian_flat_id = cian_flat_id
+        self.name = name
+        self.time = time
+        self.timeunits = timeunits
+        self.type = type
+
+    def __repr__(self):
+        return f"FlatUnderground ({self.id}, {self.flat_id}, {self.cian_flat_id}, {self.name}, " \
+               f"{self.time}, {self.timeunits}, {self.type})"
 
 
 class ProxyList(Base):

@@ -12,8 +12,19 @@ def search_terms(callback):
 
 # data filters
 
+def city_filter(data):
+    voc = {'Москва': 1,
+           'Санкт-Петербург': 2}
+    if data in voc:
+        return [voc[data]]
+    else:
+        raise ValueError("Invalid city value.")
+
+
 def deal_filter(data):
-    voc = {'Купить': 1, 'Снять на год и более': 2, 'Снять до года': 3, 'Посуточная аренда': 4}
+    voc = {'Купить': 'flatsale',
+           'Снять': 'flatrent',
+           'Посуточная аренда': 'flatrent_24h'}
     if data in voc:
         return voc[data]
     else:
@@ -22,9 +33,13 @@ def deal_filter(data):
 
 def rooms_filter(data, mode):
     if mode == 'to_int':
-        to_int = {'Студии': 9, '1-комнатные': 1, '2-комнатные': 2, '3-комнатные': 3, '4-комнатные и более': 4}
+        to_int = {'Студии': [9],
+                  '1-комнатные': [1],
+                  '2-комнатные': [2],
+                  '3-комнатные': [3],
+                  '4-комнатные и более': [4, 5, 6]}
         if data in to_int:
-            return to_int[data]
+            return [*to_int[data]]
         else:
             raise ValueError("Invalid rooms value.")
 
@@ -41,7 +56,7 @@ def rooms_filter(data, mode):
 
 
 def apartment_type_filter(data):
-    voc = {'Все': 0, 'Новостройки': 1, 'Вторичка': 2}
+    voc = {'Все': None, 'Новостройки': 2, 'Вторичка': 1}
     if data in voc:
         return voc[data]
     else:

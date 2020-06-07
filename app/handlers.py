@@ -47,7 +47,7 @@ async def get_random_flat(message: types.Message):
     session.close()
 
     if flat:
-        msg = messages.RANDOM_FLAT_ANSWER.format(flat.title, flat.link)
+        msg = messages.RANDOM_FLAT_ANSWER.format(flat.description, flat.url)
         await bot_init.bot.send_message(text=msg, chat_id=message.from_user.id)
     else:
         await bot_init.bot.send_message(text=messages.FLAT_ERROR, chat_id=message.from_user.id)
@@ -111,7 +111,7 @@ async def callback_search_terms_main(query: types.CallbackQuery):
     await bot_init.bot.send_message(
         text=messages.SETTINGS_FROM_START,
         chat_id=query.from_user.id,
-        reply_markup=buttons.build_replykeyboard(buttons.MAIN))
+        reply_markup=buttons.build_replykeyboard(buttons.MAIN))  # TODO плохо
 
     await query.answer()
 
@@ -203,7 +203,7 @@ async def callback_search_terms(query: types.CallbackQuery):
         user = session.query(db.models.User).filter(db.models.User.telegram_id == query.from_user.id).one()
         current_query = [q for q in user.queries if q.id == user.settings.editing_query][0]
 
-        if current_query.deal != 1:
+        if current_query.deal != 'flatsale':
             items = buttons.PRICE['rent']
         else:
             items = buttons.PRICE['sale']
@@ -223,7 +223,7 @@ async def callback_get_city(query: types.CallbackQuery):
     session = Session(bind=db.models.engine)
     user = session.query(db.models.User).filter(db.models.User.telegram_id == query.from_user.id).one()
     current_query = [q for q in user.queries if q.id == user.settings.editing_query][0]
-    current_query.region = query.data
+    current_query.region = filters.city_filter(query.data)
     db.utils.safe_commit(session)
 
     await bot_init.bot.delete_message(chat_id=query.from_user.id, message_id=query.message.message_id)
@@ -250,13 +250,15 @@ async def callback_get_rooms(query: types.CallbackQuery):
         selected_rooms_type = filters.rooms_filter(query.data, mode='to_int')
 
         if not current_query.rooms:
-            result = {selected_rooms_type}
+            result = {*selected_rooms_type}
         else:
             result = set(current_query.rooms)
             if selected_rooms_type not in current_query.rooms:
-                result.add(selected_rooms_type)
+                for room in selected_rooms_type:
+                    result.add(room)
             else:
-                result.remove(selected_rooms_type)
+                for room in selected_rooms_type:
+                    result.remove(room)
         current_query.rooms = list(result)
 
         db.utils.safe_commit(session)
@@ -274,8 +276,10 @@ async def callback_get_apartment_type(query: types.CallbackQuery):
     session = Session(bind=db.models.engine)
     user = session.query(db.models.User).filter(db.models.User.telegram_id == query.from_user.id).one()
     current_query = [q for q in user.queries if q.id == user.settings.editing_query][0]
-    current_query.apartment_type = filters.apartment_type_filter(query.data)
-    db.utils.safe_commit(session)
+    apartment_type = filters.apartment_type_filter(query.data)
+    if apartment_type:
+        current_query.apartment_type = apartment_type
+        db.utils.safe_commit(session)
 
     await bot_init.bot.delete_message(chat_id=query.from_user.id, message_id=query.message.message_id)
     await query.answer("Тип недвижимости: {}".format(query.data))
