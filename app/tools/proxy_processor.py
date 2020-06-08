@@ -18,7 +18,7 @@ def get_proxies_from_source_txt():
     except requests.ConnectionError:
         return []
 
-    proxies = re.findall(r"(\d+\.\d+\.\d+\.\d+:\d+).*-S!", r.content.decode())
+    proxies = re.findall(r"(\d+\.\d+\.\d+\.\d+:\d+).*-S", r.content.decode())
     shuffle(proxies)
     return proxies
 
@@ -26,10 +26,10 @@ def get_proxies_from_source_txt():
 def get_cian(url: str, page: int = None) -> (requests.Response, None):
     session = Session(bind=db.models.engine)
     answer = None
-    for current_proxy in get_proxies_from_db(session, 20):
+    for current_proxy in get_proxies_from_db(session, 5):
         try:
             url_page = url + '&page={}'.format(page) if page else url
-            proxy = {'http': 'http://' + current_proxy.address}
+            proxy = {'https': 'https://' + current_proxy.address}
 
             ua = UserAgent()
             html = requests.get(url_page,
@@ -55,15 +55,16 @@ def get_cian(url: str, page: int = None) -> (requests.Response, None):
 def post_cian(json_query) -> (requests.Response, None):
     session = Session(bind=db.models.engine)
     answer = None
-    for current_proxy in get_proxies_from_db(session, 20):
+    for current_proxy in get_proxies_from_db(session, max=5):
         try:
-            proxy = {'http': 'http://' + current_proxy.address}
+            proxy = {'http': 'http://' + current_proxy.address,
+                     'https': 'https://' + current_proxy.address}
             print(proxy)
 
             ua = UserAgent()
             html = requests.post(tools.CianApiParser.parser.API,
                                  headers={'User-Agent': ua.random},
-                                 timeout=5,
+                                 timeout=10,
                                  proxies=proxy,
                                  data=json_query)
             print(html.status_code)
@@ -72,7 +73,7 @@ def post_cian(json_query) -> (requests.Response, None):
                 break
 
         except (requests.exceptions.ConnectionError, requests.exceptions.InvalidProxyURL,
-                requests.exceptions.ReadTimeout) as e:
+                requests.exceptions.ReadTimeout, ConnectionError) as e:
             print(e)
             session.query(db.models.ProxyList).\
                 filter(db.models.ProxyList.id == current_proxy.id).\
@@ -107,15 +108,15 @@ def check_response_post(response: requests.Response):
         raise requests.exceptions.ConnectionError
 
 
-def get_proxies_from_db(session: Session, n: int = 20):
+def get_proxies_from_db(session: Session, max: int = 5):
     proxies = session.query(db.models.ProxyList).\
         filter(db.models.ProxyList.available).\
         all()
     if proxies:
-        start = randint(0, len(proxies) - n)
-        end = start + n
-        for i in range(start, end):
+        for i in range(0, len(proxies)):
             yield proxies[i]
+            if max <= i:
+                break
     else:
         raise ValueError("Couldn't find proxies in DB")
 

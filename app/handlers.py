@@ -47,8 +47,23 @@ async def get_random_flat(message: types.Message):
     session.close()
 
     if flat:
-        msg = messages.RANDOM_FLAT_ANSWER.format(flat.description, flat.url)
-        await bot_init.bot.send_message(text=msg, chat_id=message.from_user.id)
+        msg = messages.RANDOM_FLAT_ANSWER.format(price=flat.price,
+                                                 metro=flat.underground_txt,
+                                                 street=flat.address['street'],
+                                                 house=flat.address['house'],
+                                                 object_type=flat.info['object_type'],
+                                                 area=flat.info['area'],
+                                                 floor=flat.info['floor'],
+                                                 url=flat.url)
+        await bot_init.bot.send_message(text=msg,
+                                        chat_id=message.from_user.id,
+                                        disable_web_page_preview=True,
+                                        parse_mode='Markdown')
+
+        await bot_init.bot.send_location(chat_id=message.from_user.id,
+                                         latitude=flat.coordinates['lat'],
+                                         longitude=flat.coordinates['lng'],
+                                         disable_notification=True)
     else:
         await bot_init.bot.send_message(text=messages.FLAT_ERROR, chat_id=message.from_user.id)
 
@@ -79,8 +94,7 @@ async def get_price_from_msg(message: types.Message):
         except MessageToDeleteNotFound:
             continue
 
-    await message.answer(messages.PRICE_ANSWER.format(int(min_price), int(max_price)),
-                         disable_web_page_preview=False)
+    await message.answer(messages.PRICE_ANSWER.format(int(min_price), int(max_price)))
     await asyncio.sleep(2)
     await bot_init.bot.delete_message(chat_id=message.from_user.id, message_id=message.message_id+1)
 
@@ -178,6 +192,12 @@ async def callback_search_terms(query: types.CallbackQuery):
             text=messages.GET_DEAL_TYPE,
             chat_id=query.from_user.id,
             reply_markup=buttons.build_inlinekeyboard(buttons.DEAL_TYPE)
+        )
+    elif query.data == 'metro':
+        await bot_init.bot.send_message(
+            text=messages.GET_METRO1,
+            chat_id=query.from_user.id,
+            reply_markup=buttons.build_inlinekeyboard(buttons.METRO_LINE)
         )
     elif query.data == 'rooms':
         await bot_init.bot.send_message(
@@ -295,3 +315,24 @@ async def callback_get_price(query: types.CallbackQuery):
 
     await bot_init.bot.delete_message(chat_id=query.from_user.id, message_id=query.message.message_id)
     await query.answer(messages.PRICE_ANSWER.format(int(price[0]), int(price[1])))
+
+
+async def callback_metro_line(query: types.CallbackQuery):
+    if query.data == 'Красная':
+        pass
+    elif query.data == 'Синяя':
+        pass
+    elif query.data == 'Зеленая':
+        pass
+    elif query.data == 'Оранжевая':
+        pass
+    elif query.data == 'Фиолетовая':
+        pass
+
+
+async def callback_map(query: types.CallbackQuery, callback_data: dict):
+    await query.answer()
+    await bot_init.bot.send_location(chat_id=query.from_user.id,
+                                     latitude=callback_data['lat'],
+                                     longitude=callback_data['lng'],
+                                     disable_notification=True)

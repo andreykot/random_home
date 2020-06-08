@@ -41,11 +41,23 @@ async def execute_db_tasks(bot_loop):
             flats = await bot_loop.run_in_executor(executor=None, func=get_flats)
             for flat, task in zip(flats, tasks):
                 task.day_of_last_execution = datetime.now().day
-                await bot_init.bot.send_message(text=messages.RANDOM_FLAT_ANSWER.format(flat.title, flat.link),
-                                                chat_id=task.user.telegram_id)
+                msg = messages.RANDOM_FLAT_ANSWER.format(
+                    price=flat.price,
+                    metro=flat.underground_txt,
+                    object_type=flat.info['object_type'],
+                    area=flat.info['area'],
+                    floor=flat.info['floor'],
+                    url=flat.url
+                )
+                await bot_init.bot.send_message(text=msg,
+                                                chat_id=task.user.telegram_id,
+                                                parse_mode='Markdown')
                 await asyncio.sleep(.05)
 
             db.utils.safe_commit(session)
+        else:
+            session.close()
+
         await asyncio.sleep(10)
 
 

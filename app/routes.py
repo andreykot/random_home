@@ -28,4 +28,6 @@ def set_routes(dp):
                                        lambda query: query.data in buttons.APARTMENT_TYPE.items)
     dp.register_callback_query_handler(handlers.callback_get_price,
                                        lambda query: query.data in buttons.PRICE['rent'].items + buttons.PRICE['sale'].items)
+    dp.register_callback_query_handler(handlers.callback_map,
+                                       filters.map.filter())
 

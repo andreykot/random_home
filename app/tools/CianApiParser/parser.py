@@ -88,9 +88,9 @@ class QueryConstructor:
         if self._type == 'flatsale':
             return {'_type': 'flatsale'}
         elif self._type == 'flatrent':
-            return {'_type': 'flatrent', "for_day": {"type": "terms", "value": "!1"}}
+            return {"for_day": {"type": "term", "value": "!1"}, '_type': 'flatrent'}
         elif self._type == 'flatrent_24h':
-            return {'_type': 'flatrent', "for_day": {"type": "terms", "value": "1"}}
+            return {"for_day": {"type": "term", "value": "1"}, '_type': 'flatrent'}
         else:
             raise ValueError
 
@@ -231,6 +231,18 @@ class CianFlat:
         else:
             return {'name': None, 'time': None, 'units': None, 'type': None}
 
+    @property
+    def underground_txt(self):
+        data = self.underground
+        if data['type'] == 'walk' and data['time']:
+            return f"ст. {data['name']}, пешком {data['time']} {data['units']}"
+        elif data['type'] == 'transport' and data['time']:
+            return f"ст. {data['name']}, транспортом {data['time']} {data['units']}"
+        elif data['type']:
+            return f"ст. {data['name']}"
+        else:
+            return "не определено"
+
 
 class ApiManager:
     def __init__(self, query: QueryConstructor):
@@ -249,7 +261,7 @@ class ApiManager:
             raise RuntimeError
 
     def get_random_flat(self):
-        n = randint(0, 27)
+        n = randint(0, len(self.data['offers'])-1)
         if 'offers' in self.data:
             flat = CianFlat(api_data=self.data['offers'][n])
             return flat
