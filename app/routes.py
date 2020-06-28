@@ -20,6 +20,10 @@ def set_routes(dp):
                                        filters.search_terms)
     dp.register_callback_query_handler(handlers.callback_get_city,
                                        lambda query: query.data in buttons.CITY.items)
+    dp.register_callback_query_handler(handlers.callback_underground_line,
+                                       lambda query: query.data in buttons.UNDERGROUND_LINE.items)
+    dp.register_callback_query_handler(handlers.callback_get_underground_station,
+                                       lambda query: 'underground_station' in query.data)
     dp.register_callback_query_handler(handlers.callback_get_deal_type,
                                        lambda query: query.data in buttons.DEAL_TYPE.items)
     dp.register_callback_query_handler(handlers.callback_get_rooms,

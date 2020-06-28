@@ -4,9 +4,7 @@ import re
 import requests
 import traceback
 from bs4 import BeautifulSoup
-from sqlalchemy.orm import Session
 
-from app import db
 from app.tools import proxy_processor
 
 

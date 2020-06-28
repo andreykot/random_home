@@ -3,6 +3,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Session, relationship
 
 from datetime import datetime
+import math
 from random import randint
 import traceback
 
@@ -10,9 +11,10 @@ from app.configs.db import RANDOM_HOME_DB_USER, RANDOM_HOME_DB_PASSWORD, DB_SERV
 from app.tools import CianApiParser, proxy_processor
 
 
-DB = 'postgresql+psycopg2://{}:{}@{}/random_home_test'.format(RANDOM_HOME_DB_USER,
-                                                              RANDOM_HOME_DB_PASSWORD,
-                                                              DB_SERVER_IP)  #TODO test db
+DB = 'postgresql+psycopg2://{}:{}@{}/random_home'.format(RANDOM_HOME_DB_USER,
+                                                         RANDOM_HOME_DB_PASSWORD,
+                                                         DB_SERVER_IP)
+
 Base = declarative_base()
 engine = create_engine(DB)
 
@@ -73,31 +75,32 @@ class Query(Base):
     __tablename__ = 'queries'
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey('users.id'))
-    url = Column(String)
     pages = Column(Integer)
     region = Column(ARRAY(Integer))
     deal = Column(String)
+    underground = Column(Integer)
     rooms = Column(ARRAY(Integer))
     apartment_type = Column(Integer)
     price = Column(ARRAY(Float))
     user = relationship('User', back_populates='queries', uselist=False)
     tasks = relationship('Task', back_populates='query')
 
-    def __init__(self, user_id, url=None, pages=None, region=None, deal=None, rooms=None, apartment_type=None,
-                 price=None):
+    def __init__(self, user_id, pages=None, region=None, deal=None, underground=None, rooms=None,
+                 apartment_type=None, price=None):
         self.user_id = user_id
-        self.url = url
         self.pages = pages
         self.region = region
         self.deal = deal
+        self.underground = underground
         self.rooms = rooms
         self.apartment_type = apartment_type
         self.price = price
 
     def __repr__(self):
-        return f"<Query({self.user_id}, {self.url}, {self.pages}, {self.region}, {self.deal}, {self.rooms}, {self.apartment_type}, {self.price})>"
+        return f"<Query({self.user_id}, {self.pages}, {self.region}, {self.deal}, {self.underground}" \
+               f" {self.rooms}, {self.apartment_type}, {self.price})>"
 
-    def process_query(self, session=None):
+    async def process_query(self, session=None):
         if not session:
             session = Session(bind=engine)
 
@@ -106,14 +109,22 @@ class Query(Base):
         constructor = CianApiParser.parser.QueryConstructor(page=page,
                                                             region=self.region,
                                                             type=self.deal,
+                                                            underground_id=self.underground,
                                                             room=self.rooms,
                                                             building_status=self.apartment_type,
                                                             price=self.price)
-        #repeated_flat, flat = True, None
-        print(constructor.create_json_query())
 
-        api_manager = CianApiParser.parser.ApiManager(query=constructor)
-        flat = api_manager.get_random_flat()
+        flats_in_storage = session.query(Flat).filter(Flat.query_id == self.id).all()
+        api_manager = CianApiParser.parser.ApiManager(query=constructor, flats_in_storage=flats_in_storage)
+
+        flat, attempts = None, 1
+        while not flat and attempts <= 3:
+            print('attempt: ', attempts)
+            flat = await api_manager.run()
+            attempts += 1
+
+        if not flat:
+            raise NotNewFlats
 
         flat_obj = Flat(query_id=self.id,
                         url=flat.url,
@@ -143,26 +154,24 @@ class Query(Base):
                 type=flat.underground['type']
             )
         )
+
+        pages_count = math.ceil(api_manager.data['offersCount'] / 28)
         session.query(Query).\
             filter(Query.id == self.id).\
-            update({'url': flat.url,
-                    'pages': api_manager.data['offersCount'] // 28 if (api_manager.data['offersCount'] // 28) <= 54 else 54})
+            update({'pages': pages_count if pages_count <= 54 else 54})
         session.commit()
         return flat
 
-    @staticmethod
-    def is_repeated_flat(session: Session, random_flat) -> bool:
-        repeated = 0
-        while repeated < CianApiParser.parser.FLATS_PER_PAGE:
-            is_db_flat = session.query(Flat).\
-                filter(Flat.url == random_flat.url).\
-                all()
+    def check_repeated_flat(self, session):
+        pass
 
-            if is_db_flat:
-                repeated += 1
-            else:
-                return False
-        return True
+
+class NotNewFlats(Exception):
+    def __init__(self):
+        pass
+
+    def __str__(self):
+        return "Couldn't find new flats."
 
 
 class UserSettings(Base):
@@ -335,8 +344,8 @@ class Task(Base):
         }
         return tasks[self.task_type]
 
-    def send_random_flat(self):
-        flat = self.query.process_query()
+    async def send_random_flat(self):
+        flat = await self.query.process_query()
         if flat:
             return flat
         else:
@@ -358,6 +367,4 @@ def safe_commit(session):
 
 
 if __name__ == '__main__':
-    link1 = 'postgresql+psycopg2://{RANDOM_HOME_DB_USER}:{RANDOM_HOME_DB_PASSWORD}@127.0.0.1:5432/random_home_db'
-    test_db = create_engine(link1)
-    Base.metadata.create_all(test_db)
+    pass

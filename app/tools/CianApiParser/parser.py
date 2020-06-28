@@ -1,9 +1,10 @@
+import asyncio
 import json
 from random import randint
 import re
-import requests
 
-from app.tools import proxy_processor
+from app import bot
+from app.tools.ProxyPool.main import ProxyPool
 
 
 API = "https://api.cian.ru/search-engine/v1/search-offers-mobile-site/"
@@ -54,8 +55,8 @@ class QueryConstructor:
         self._price = price
         self._room = room
 
-        #self._geo = dict()
-        #self._geo.update({'underground_id': None})
+        self.underground_id = underground_id
+        self._geo = True if any([self.underground_id]) else False
 
         self._foot_min = foot_min
         self._total_area = total_area
@@ -71,7 +72,7 @@ class QueryConstructor:
     def create_json_query(self):
         args = dict()
         for attr, value in self.__dict__.items():
-            if value:
+            if attr[0] == '_' and value:
                 args.update(getattr(self, attr[1:]))
         return {"jsonQuery": args}
 
@@ -109,9 +110,8 @@ class QueryConstructor:
     @property
     def geo(self):
         geo = {"geo": {"type": "geo", "value": []}}
-        for key, item in self._geo.items():
-            if key == 'underground_id' and self._geo['underground_id']:
-                geo['geo']['value'].append({"type": "underground", "id": self._geo['underground_id']})
+        if self.underground_id:
+            geo['geo']['value'].append({"type": "underground", "id": self.underground_id})
 
         return geo
 
@@ -245,50 +245,55 @@ class CianFlat:
 
 
 class ApiManager:
-    def __init__(self, query: QueryConstructor):
+    def __init__(self, query: QueryConstructor, flats_in_storage: list):
         self.query = query
+        self.flats_in_storage = flats_in_storage
         self.data = None
-        self.init()
 
-    def init(self):
+    async def run(self):
         json_query = json.dumps(self.query.create_json_query()).encode('utf8')
-        response = proxy_processor.post_cian(json_query=json_query)
-        response = requests.post(API, data=json_query)
-        print(response.status_code)
-        if response.status_code == 200:
-            self.data = json.loads(response.content)
-        else:
-            raise RuntimeError
+
+        loop = bot.dispatcher.loop
+        pool = ProxyPool(loop=loop)
+
+        task = loop.create_task(
+            pool.pool_post(
+                url=API,
+                data=json_query,
+                answer_middleware=self.process_response
+            )
+        )
+        while (self.data is None) and not task.done():
+            await asyncio.sleep(1)
+
+        return self.get_random_flat()
+
+    async def process_response(self, response):
+        self.data = await response.json()
+        if self.data is None:
+            print(response.status)
 
     def get_random_flat(self):
-        n = randint(0, len(self.data['offers'])-1)
-        if 'offers' in self.data:
-            flat = CianFlat(api_data=self.data['offers'][n])
+        if isinstance(self.data, dict) and 'offers' in self.data:
+            collected_urls = [flat.url for flat in self.flats_in_storage]
+            new_flats = [
+                flat for flat in self.data['offers']
+                if f"https://cian.ru/sale/flat/{flat['id']}/" not in collected_urls
+            ]
+
+            if not new_flats:
+                return None
+
+            n = randint(0, len(new_flats) - 1)
+            flat = CianFlat(api_data=new_flats[n])
             return flat
+
         else:
             return None
 
 
 if __name__ == '__main__':
-    q = QueryConstructor(page=3, region=[2], type='flatsale')
-    print(q.create_json_query())
-    #data = ApiManager(query=q)
-    #flat = data.data
-    #print(flat)
-    #print(flat.url,
-    #      flat.address,
-    #      flat.info,
-    #     flat.underground)
-    newConditions = {'jsonQuery': {'page': {'type': 'term', 'value': 3}, 'region': {'type': 'terms', 'value': [2]}, '_type': 'flatsale', 'currency': {'type': 'term', 'value': 2}, 'engine_version': {'type': 'term', 'value': 2}}}
-    from urllib.request import Request, urlopen
-
-    params = json.dumps(newConditions).encode('utf8')
-    #req = Request(API, data=params, headers={'content-type': 'application/json'})
-    req = requests.post(API, data=params)
-    print(req.status_code)
-    print(req.content)
-    #response = urlopen(req)
-    #print(response.read().decode('utf8'))
+    pass
 
 
 

@@ -14,14 +14,14 @@ class Buttons(NamedTuple):
 START_SEARCH = Buttons(items=['Задать критерии поиска'])
 SEARCH_TERMS = Buttons(items=[('Выбрать город', 'city'),
                               ('Тип предложения: купить или снять?', 'deal'),
-                              ('Выбрать ближайшее метро', 'metro'),
+                              ('Выбрать ближайшее метро (СПб)', 'underground'),
                               ('Задать количество комнат', 'rooms'),
                               ('Новостройка или вторичка?', 'apart_type'),
                               ('Задать ценовой диапазон', 'price')])
 
 CITY = Buttons(items=['Москва', 'Санкт-Петербург'], order=[2])
 DEAL_TYPE = Buttons(items=['Купить', 'Снять', 'Посуточная аренда'])
-METRO_LINE = Buttons(items=['Красная', 'Синяя', 'Зеленая', 'Оранжевая', 'Фиолетовая'], order=[2, 2, 1])
+UNDERGROUND_LINE = Buttons(items=['Красная', 'Синяя', 'Зеленая', 'Оранжевая', 'Фиолетовая'], order=[2, 2, 1])
 ROOMS = Buttons(items=['Студии', '1-комнатные', '2-комнатные', '3-комнатные', '4-комнатные и более', 'Готово!'],
                 order=[2, 2, 1, 1])
 APARTMENT_TYPE = Buttons(items=['Новостройки', 'Вторичка', 'Все'], order=[2, 1])
@@ -69,11 +69,6 @@ def build_replykeyboard(buttons):
         raise TypeError('Unknown type of buttons in app.buttons.build_replykeyboard')
 
     return markup
-
-
-    #markup = types.ReplyKeyboardMarkup(resize_keyboard=True, selective=True)
-    #markup.add(*iterable)
-    #return markup
 
 
 def build_inlinekeyboard(buttons, row_width: int = 3):

@@ -1,3 +1,4 @@
 #ignore dirs and files for git repository 
 venv
+builds
 .idea

@@ -7,7 +7,7 @@ from app import buttons
 # callback filters
 
 def search_terms(callback):
-    return callback.data in ['city', 'deal', 'rooms', 'apart_type', 'price']
+    return callback.data in ['city', 'deal', 'underground', 'rooms', 'apart_type', 'price']
 
 
 # data filters
@@ -37,29 +37,28 @@ def metro_line_filter(data):
         return voc[data]
 
 
-def metro_station_filter(line: int, name: str):
-    voc = {
-        1: {
-        "Девяткино": 167,
-        "Гражданский проспект": 168,
-        "Академическая": 169,
-        "Политехническая": 170,
-        "Пл. Мужества": 171,
-        "Лесная": 172,
-        "Выборгская": 173,
-        "Пл. Ленина": 174,
-        "Чернышевская": 175,
-        "Пл. Восстания": 176,
-        "Владимирская": 177,
-        "Пушкинская": 178,
-        "Технологический институт": 179,
-        "Балтийская": 180,
-        "Нарвская": 181,
-        "Кировский завод": 182,
-        "Автовово": 183,
-        "Ленинский проспект": 184,
-        "Проспект Ветеранов": 185},
-        2: {
+underground_voc = {
+        'Красная': {
+            "Девяткино": 167,
+            "Гражданский проспект": 168,
+            "Академическая": 169,
+            "Политехническая": 170,
+            "Пл. Мужества": 171,
+            "Лесная": 172,
+            "Выборгская": 173,
+            "Пл. Ленина": 174,
+            "Чернышевская": 175,
+            "Пл. Восстания": 176,
+            "Владимирская": 177,
+            "Пушкинская": 178,
+            "Технологический институт": 179,
+            "Балтийская": 180,
+            "Нарвская": 181,
+            "Кировский завод": 182,
+            "Автово": 183,
+            "Ленинский проспект": 184,
+            "Проспект Ветеранов": 185},
+        'Синяя': {
             "Парнас": 186,
             "Проспект Просвещения": 187,
             "Озерки": 188,
@@ -79,7 +78,7 @@ def metro_station_filter(line: int, name: str):
             "Звездная": 202,
             "Купчино": 203
         },
-        3: {
+        'Зеленая': {
             "Беговая": 355,
             "Новокрестовская": 356,
             "Приморская": 204,
@@ -93,7 +92,7 @@ def metro_station_filter(line: int, name: str):
             "Обухово": 213,
             "Рыбацкое": 214
         },
-        5: {
+        'Фиолетовая': {
             "Комендантский проспект": 215,
             "Старая деревня": 216,
             "Крестовский остров": 217,
@@ -110,19 +109,22 @@ def metro_station_filter(line: int, name: str):
             "Дунайская": 358,
             "Шушары": 359
         },
-        4: {
+        'Оранжевая': {
             "Спасская": 232,
             "Достоевская": 221,
             "Лиговский проспект": 222,
-            "Пл Александра Невского": 208,
+            "Пл. Александра Невского": 208,
             "Новочеркасская": 224,
             "Ладожская": 225,
             "Проспект Большевиков": 226,
             "Улица Дыбенко": 227
         }
     }
-    if (line in voc) and (name in voc[line]):
-        return voc[line][name]
+
+
+def underground_station_filter(line: str, name: str):
+    if (line in underground_voc) and (name in underground_voc[line]):
+        return underground_voc[line][name]
 
 
 def rooms_filter(data, mode):
@@ -140,9 +142,6 @@ def rooms_filter(data, mode):
     elif mode == 'array_to_str':
         array_to_str = {9: 'студии', 1: '1к', 2: '2к', 3: '3к', 4: '4к+'}
         result = [array_to_str[item] for item in data if item in array_to_str]
-        if len(data) != len(result):
-            raise ValueError("Invalid rooms value.")
-
         return ', '.join(result) if result else ''
 
     else:

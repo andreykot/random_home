@@ -1,3 +1,5 @@
+# old tools, not used in app.
+
 from collections import deque
 import requests
 import re
@@ -35,7 +37,7 @@ def get_cian(url: str, page: int = None) -> (requests.Response, None):
             html = requests.get(url_page,
                                 headers={'User-Agent': ua.random},
                                 proxies=proxy,
-                                timeout=5)
+                                timeout=10)
             if check_response_get(html):
                 answer = html
                 break
@@ -57,15 +59,17 @@ def post_cian(json_query) -> (requests.Response, None):
     answer = None
     for current_proxy in get_proxies_from_db(session, max=5):
         try:
-            proxy = {'http': 'http://' + current_proxy.address,
-                     'https': 'https://' + current_proxy.address}
+            proxy = {
+                'http': 'http://' + current_proxy.address,
+                'https': 'https://' + current_proxy.address
+            }
             print(proxy)
 
             ua = UserAgent()
             html = requests.post(tools.CianApiParser.parser.API,
                                  headers={'User-Agent': ua.random},
                                  timeout=10,
-                                 proxies=proxy,
+                                 #proxies=proxy,
                                  data=json_query)
             print(html.status_code)
             if check_response_post(html):
@@ -73,14 +77,14 @@ def post_cian(json_query) -> (requests.Response, None):
                 break
 
         except (requests.exceptions.ConnectionError, requests.exceptions.InvalidProxyURL,
-                requests.exceptions.ReadTimeout, ConnectionError) as e:
+                requests.exceptions.ReadTimeout, ConnectionError, requests.exceptions.ProxyError) as e:
             print(e)
             session.query(db.models.ProxyList).\
                 filter(db.models.ProxyList.id == current_proxy.id).\
                 update({'available': False})
             print(f"{current_proxy.address} is not available.")
             session.commit()
-            time.sleep(5)
+            time.sleep(2)
 
     session.close()
     return answer

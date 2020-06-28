@@ -1,34 +1,47 @@
 import asyncio
-from collections import deque
-from functools import partial
-import multiprocessing
-from queue import Queue
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor
 from sqlalchemy.orm import Session
 
-from app import db, bot_init
+from app import db, bot
 from app.configs import messages
+from app.tools.ProxyPool.main import ProxyPool
 
 
-async def update_proxies_on_startup(_):
-    db.models.ProxyList.update_table()
-
-
-async def update_proxies():
+async def update_proxies(bot_loop):
     day = 0
     while True:
         if (datetime.today().hour == 4 and datetime.today().minute == 0) and (day != datetime.today().day):
-            db.models.ProxyList.update_table()
-            day = datetime.today().day
-            print("proxies updated at {}".format(datetime.now().strftime("%d-%b-%Y (%H:%M:%S)")))
+            proxy_pool = ProxyPool(loop=bot_loop)
+            await proxy_pool.upload_proxies()
+            #print("proxies updated at {}".format(datetime.now().strftime("%d-%b-%Y (%H:%M:%S)")))
         await asyncio.sleep(50)
 
 
 async def execute_db_tasks(bot_loop):
-    def get_flats():
-        res = [task.execute_task() for task in tasks]
-        return res
+    async def get_flats(session):
+        flats = [await task.execute_task() for task in tasks]
+        for flat, task in zip(flats, tasks):
+            task.day_of_last_execution = datetime.now().day
+            msg = messages.RANDOM_FLAT_ANSWER.format(
+                price=flat.price,
+                metro=flat.underground_txt,
+                street=flat.address['street'],
+                house=flat.address['house'],
+                object_type=flat.info['object_type'],
+                area=flat.info['area'],
+                floor=flat.info['floor'],
+                url=flat.url
+            )
+            await bot.bot_instance.send_message(text=msg,
+                                                chat_id=task.user.telegram_id,
+                                                parse_mode='Markdown')
+            await bot.bot_instance.send_location(chat_id=task.user.telegram_id,
+                                                 latitude=flat.coordinates['lat'],
+                                                 longitude=flat.coordinates['lng'],
+                                                 disable_notification=True)
+
+            await asyncio.sleep(.05)
+        db.utils.safe_commit(session)
 
     while True:
         session = Session(bind=db.models.engine)
@@ -38,27 +51,11 @@ async def execute_db_tasks(bot_loop):
             all()
 
         if tasks:
-            flats = await bot_loop.run_in_executor(executor=None, func=get_flats)
-            for flat, task in zip(flats, tasks):
-                task.day_of_last_execution = datetime.now().day
-                msg = messages.RANDOM_FLAT_ANSWER.format(
-                    price=flat.price,
-                    metro=flat.underground_txt,
-                    object_type=flat.info['object_type'],
-                    area=flat.info['area'],
-                    floor=flat.info['floor'],
-                    url=flat.url
-                )
-                await bot_init.bot.send_message(text=msg,
-                                                chat_id=task.user.telegram_id,
-                                                parse_mode='Markdown')
-                await asyncio.sleep(.05)
-
-            db.utils.safe_commit(session)
+            bot_loop.create_task(get_flats(session))
         else:
             session.close()
 
-        await asyncio.sleep(10)
+        await asyncio.sleep(50)
 
 
 

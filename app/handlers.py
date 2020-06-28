@@ -1,16 +1,11 @@
 import asyncio
-from random import randint
 import re
 import traceback
 
-import aiogram.utils.markdown as md
 from aiogram import types
-from aiogram.dispatcher import FSMContext
-from aiogram.types import ParseMode, Update, callback_query
-from aiogram.utils.exceptions import MessageToDeleteNotFound
 from sqlalchemy.orm import Session
 
-from app import bot_init, buttons, filters
+from app import bot, buttons, filters
 from app import db
 from app.configs import messages
 
@@ -39,11 +34,20 @@ async def search_terms(message: types.Message):
 
 
 async def get_random_flat(message: types.Message):
+    await bot.bot_instance.send_message(text=messages.RANDOM_FLAT_WAITING,
+                                        chat_id=message.from_user.id,
+                                        disable_notification=True)
+
     session = Session(bind=db.models.engine)
     user = session.query(db.models.User).filter(db.models.User.telegram_id == message.from_user.id).one()
     current_query = [q for q in user.queries if q.id == user.settings.editing_query][0]
 
-    flat = current_query.process_query(session)
+    try:
+        flat = await current_query.process_query(session)
+    except db.models.NotNewFlats:
+        await bot.bot_instance.send_message(text=messages.RANDOM_FLAT_EMPTY, chat_id=message.from_user.id)
+        return
+
     session.close()
 
     if flat:
@@ -55,17 +59,17 @@ async def get_random_flat(message: types.Message):
                                                  area=flat.info['area'],
                                                  floor=flat.info['floor'],
                                                  url=flat.url)
-        await bot_init.bot.send_message(text=msg,
-                                        chat_id=message.from_user.id,
-                                        disable_web_page_preview=True,
-                                        parse_mode='Markdown')
+        await bot.bot_instance.send_message(text=msg,
+                                            chat_id=message.from_user.id,
+                                            disable_web_page_preview=True,
+                                            parse_mode='Markdown')
 
-        await bot_init.bot.send_location(chat_id=message.from_user.id,
-                                         latitude=flat.coordinates['lat'],
-                                         longitude=flat.coordinates['lng'],
-                                         disable_notification=True)
+        await bot.bot_instance.send_location(chat_id=message.from_user.id,
+                                             latitude=flat.coordinates['lat'],
+                                             longitude=flat.coordinates['lng'],
+                                             disable_notification=True)
     else:
-        await bot_init.bot.send_message(text=messages.FLAT_ERROR, chat_id=message.from_user.id)
+        await bot.bot_instance.send_message(text=messages.RANDOM_FLAT_ERROR, chat_id=message.from_user.id)
 
 
 async def help(message: types.Message):
@@ -84,19 +88,16 @@ async def get_price_from_msg(message: types.Message):
     session = Session(bind=db.models.engine)
     user = session.query(db.models.User).filter(db.models.User.telegram_id == message.from_user.id).one()
     current_query = [q for q in user.queries if q.id == user.settings.editing_query][0]
-    current_edit_msg = user.settings.current_edit_msg
     current_query.price = [min_price, max_price]
     db.utils.safe_commit(session)
 
-    for i in range(message.message_id, current_edit_msg, -1):
-        try:
-            await bot_init.bot.delete_message(chat_id=message.from_user.id, message_id=i)
-        except MessageToDeleteNotFound:
-            continue
-
-    await message.answer(messages.PRICE_ANSWER.format(int(min_price), int(max_price)))
-    await asyncio.sleep(2)
-    await bot_init.bot.delete_message(chat_id=message.from_user.id, message_id=message.message_id+1)
+    await message.reply(messages.PRICE_ANSWER.format(int(min_price), int(max_price)))
+    await bot.bot_instance.send_message(
+        text=messages.SEARCH_TERMS,
+        chat_id=message.from_user.id,
+        message_id=message.message_id,
+        reply_markup=buttons.build_inlinekeyboard(buttons.SEARCH_TERMS)
+    )
 
 
 async def notifications_settings(message: types.Message):
@@ -108,10 +109,16 @@ async def notifications_settings(message: types.Message):
 
 async def callback_search_terms_main(query: types.CallbackQuery):
     if query.data == 'Задать критерии поиска':
-        await bot_init.bot.edit_message_text(
+        await bot.bot_instance.send_message(
+            text=messages.SETTINGS_FROM_START,
+            chat_id=query.from_user.id,
+            reply_markup=buttons.build_replykeyboard(buttons.MAIN))
+
+        await asyncio.sleep(2)
+
+        await bot.bot_instance.send_message(
             text=messages.SEARCH_TERMS,
             chat_id=query.from_user.id,
-            message_id=query.message.message_id,
             reply_markup=buttons.build_inlinekeyboard(buttons.SEARCH_TERMS)
         )
 
@@ -121,11 +128,6 @@ async def callback_search_terms_main(query: types.CallbackQuery):
     except Exception:
         print(traceback.print_exc())
         raise NotImplementedError
-
-    await bot_init.bot.send_message(
-        text=messages.SETTINGS_FROM_START,
-        chat_id=query.from_user.id,
-        reply_markup=buttons.build_replykeyboard(buttons.MAIN))  # TODO плохо
 
     await query.answer()
 
@@ -176,31 +178,30 @@ async def callback_notifications(query: types.CallbackQuery):
         session.bulk_save_objects(tasks)
     db.utils.safe_commit(session)
 
-    await bot_init.bot.delete_message(chat_id=query.from_user.id, message_id=query.message.message_id)
     await query.answer(messages.NOTIFICATIONS_ANSWER)
 
 
 async def callback_search_terms(query: types.CallbackQuery):
     if query.data == 'city':
-        await bot_init.bot.send_message(
+        await bot.bot_instance.send_message(
             text=messages.GET_CITY,
             chat_id=query.from_user.id,
             reply_markup=buttons.build_inlinekeyboard(buttons.CITY)
         )
     elif query.data == 'deal':
-        await bot_init.bot.send_message(
+        await bot.bot_instance.send_message(
             text=messages.GET_DEAL_TYPE,
             chat_id=query.from_user.id,
             reply_markup=buttons.build_inlinekeyboard(buttons.DEAL_TYPE)
         )
-    elif query.data == 'metro':
-        await bot_init.bot.send_message(
-            text=messages.GET_METRO1,
+    elif query.data == 'underground':
+        await bot.bot_instance.send_message(
+            text=messages.GET_UNDERGROUND1,
             chat_id=query.from_user.id,
-            reply_markup=buttons.build_inlinekeyboard(buttons.METRO_LINE)
+            reply_markup=buttons.build_inlinekeyboard(buttons.UNDERGROUND_LINE)
         )
     elif query.data == 'rooms':
-        await bot_init.bot.send_message(
+        await bot.bot_instance.send_message(
             text=messages.GET_ROOMS,
             chat_id=query.from_user.id,
             reply_markup=buttons.build_inlinekeyboard(buttons.ROOMS)
@@ -211,7 +212,7 @@ async def callback_search_terms(query: types.CallbackQuery):
         current_query = [q for q in user.queries if q.id == user.settings.editing_query][0]
 
         if current_query.deal == 1:
-            await bot_init.bot.send_message(
+            await bot.bot_instance.send_message(
                 text=messages.GET_APARTMENT_TYPE,
                 chat_id=query.from_user.id,
                 reply_markup=buttons.build_inlinekeyboard(buttons.APARTMENT_TYPE)
@@ -228,7 +229,7 @@ async def callback_search_terms(query: types.CallbackQuery):
         else:
             items = buttons.PRICE['sale']
 
-        await bot_init.bot.send_message(
+        await bot.bot_instance.send_message(
             text=messages.GET_PRICE,
             chat_id=query.from_user.id,
             reply_markup=buttons.build_inlinekeyboard(items)
@@ -244,10 +245,15 @@ async def callback_get_city(query: types.CallbackQuery):
     user = session.query(db.models.User).filter(db.models.User.telegram_id == query.from_user.id).one()
     current_query = [q for q in user.queries if q.id == user.settings.editing_query][0]
     current_query.region = filters.city_filter(query.data)
+    current_query.pages = None
     db.utils.safe_commit(session)
 
-    await bot_init.bot.delete_message(chat_id=query.from_user.id, message_id=query.message.message_id)
     await query.answer(f'Город: {query.data}')
+    await bot.bot_instance.send_message(
+        text=messages.SEARCH_TERMS,
+        chat_id=query.from_user.id,
+        reply_markup=buttons.build_inlinekeyboard(buttons.SEARCH_TERMS)
+    )
 
 
 async def callback_get_deal_type(query: types.CallbackQuery):
@@ -255,16 +261,22 @@ async def callback_get_deal_type(query: types.CallbackQuery):
     user = session.query(db.models.User).filter(db.models.User.telegram_id == query.from_user.id).one()
     current_query = [q for q in user.queries if q.id == user.settings.editing_query][0]
     current_query.deal = filters.deal_filter(query.data)
+    current_query.pages = None
     db.utils.safe_commit(session)
 
-    await bot_init.bot.delete_message(chat_id=query.from_user.id, message_id=query.message.message_id)
     await query.answer(f"Тип: {query.data}")
+    await bot.bot_instance.send_message(
+        text=messages.SEARCH_TERMS,
+        chat_id=query.from_user.id,
+        reply_markup=buttons.build_inlinekeyboard(buttons.SEARCH_TERMS)
+    )
 
 
 async def callback_get_rooms(query: types.CallbackQuery):
     session = Session(bind=db.models.engine)
     user = session.query(db.models.User).filter(db.models.User.telegram_id == query.from_user.id).one()
     current_query = [q for q in user.queries if q.id == user.settings.editing_query][0]
+    current_query.pages = None
 
     if query.data != 'Готово!':
         selected_rooms_type = filters.rooms_filter(query.data, mode='to_int')
@@ -273,11 +285,10 @@ async def callback_get_rooms(query: types.CallbackQuery):
             result = {*selected_rooms_type}
         else:
             result = set(current_query.rooms)
-            if selected_rooms_type not in current_query.rooms:
-                for room in selected_rooms_type:
+            for room in selected_rooms_type:
+                if room not in current_query.rooms:
                     result.add(room)
-            else:
-                for room in selected_rooms_type:
+                else:
                     result.remove(room)
         current_query.rooms = list(result)
 
@@ -285,11 +296,16 @@ async def callback_get_rooms(query: types.CallbackQuery):
         await query.answer("Квартиры: {}".format(filters.rooms_filter(list(result), mode='array_to_str')))
 
     else:
-        await bot_init.bot.delete_message(chat_id=query.from_user.id, message_id=query.message.message_id)
         if current_query.rooms:
             await query.answer("Количество комнат установлено!")
         else:
             await query.answer("Количество комнат не установлено")
+
+        await bot.bot_instance.send_message(
+            text=messages.SEARCH_TERMS,
+            chat_id=query.from_user.id,
+            reply_markup=buttons.build_inlinekeyboard(buttons.SEARCH_TERMS)
+        )
 
 
 async def callback_get_apartment_type(query: types.CallbackQuery):
@@ -299,10 +315,15 @@ async def callback_get_apartment_type(query: types.CallbackQuery):
     apartment_type = filters.apartment_type_filter(query.data)
     if apartment_type:
         current_query.apartment_type = apartment_type
+        current_query.pages = None
         db.utils.safe_commit(session)
 
-    await bot_init.bot.delete_message(chat_id=query.from_user.id, message_id=query.message.message_id)
     await query.answer("Тип недвижимости: {}".format(query.data))
+    await bot.bot_instance.send_message(
+        text=messages.SEARCH_TERMS,
+        chat_id=query.from_user.id,
+        reply_markup=buttons.build_inlinekeyboard(buttons.SEARCH_TERMS)
+    )
 
 
 async def callback_get_price(query: types.CallbackQuery):
@@ -311,28 +332,49 @@ async def callback_get_price(query: types.CallbackQuery):
     current_query = [q for q in user.queries if q.id == user.settings.editing_query][0]
     price = list(filters.price_filter(query.data))
     current_query.price = price
+    current_query.pages = None
     db.utils.safe_commit(session)
 
-    await bot_init.bot.delete_message(chat_id=query.from_user.id, message_id=query.message.message_id)
     await query.answer(messages.PRICE_ANSWER.format(int(price[0]), int(price[1])))
+    await bot.bot_instance.send_message(
+        text=messages.SEARCH_TERMS,
+        chat_id=query.from_user.id,
+        reply_markup=buttons.build_inlinekeyboard(buttons.SEARCH_TERMS)
+    )
 
 
-async def callback_metro_line(query: types.CallbackQuery):
-    if query.data == 'Красная':
-        pass
-    elif query.data == 'Синяя':
-        pass
-    elif query.data == 'Зеленая':
-        pass
-    elif query.data == 'Оранжевая':
-        pass
-    elif query.data == 'Фиолетовая':
-        pass
+async def callback_underground_line(query: types.CallbackQuery):
+    metro_stations = filters.underground_voc[query.data].items()
+    metro_stations = [(s, f"underground_station {id}") for s, id in metro_stations]
+
+    await bot.bot_instance.send_message(
+        text=messages.GET_UNDERGROUND2,
+        chat_id=query.from_user.id,
+        disable_web_page_preview=True,
+        reply_markup=buttons.build_inlinekeyboard(buttons.Buttons(items=metro_stations)))
+    await query.answer()
+
+
+async def callback_get_underground_station(query: types.CallbackQuery):
+    session = Session(bind=db.models.engine)
+    user = session.query(db.models.User).filter(db.models.User.telegram_id == query.from_user.id).one()
+    current_query = [q for q in user.queries if q.id == user.settings.editing_query][0]
+    station = int(query.data.split(' ')[1])
+    current_query.underground = station
+    current_query.pages = None
+    db.utils.safe_commit(session)
+
+    await query.answer("Станция метро установлена!")
+    await bot.bot_instance.send_message(
+        text=messages.SEARCH_TERMS,
+        chat_id=query.from_user.id,
+        reply_markup=buttons.build_inlinekeyboard(buttons.SEARCH_TERMS)
+    )
 
 
 async def callback_map(query: types.CallbackQuery, callback_data: dict):
     await query.answer()
-    await bot_init.bot.send_location(chat_id=query.from_user.id,
-                                     latitude=callback_data['lat'],
-                                     longitude=callback_data['lng'],
-                                     disable_notification=True)
+    await bot.bot_instance.send_location(chat_id=query.from_user.id,
+                                         latitude=callback_data['lat'],
+                                         longitude=callback_data['lng'],
+                                         disable_notification=True)

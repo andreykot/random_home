@@ -4,10 +4,6 @@ import traceback
 from .models import DB, Base
 
 
-def send_sql_query(query: str, get_result: bool):
-    pass
-
-
 def safe_commit(session):
     try:
         session.commit()

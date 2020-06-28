@@ -1,0 +1,9 @@
+#!/bin/bash
+
+sudo docker run \
+-e RANDOM_HOME_BOT=${RANDOM_HOME_BOT} \
+-e DO_SERVER_IP=${LDO_SERVER_IP} \
+-e RANDOM_HOME_DB_USER=${RANDOM_HOME_DB_USER} \
+-e RANDOM_HOME_DB_PASSWORD=${RANDOM_HOME_DB_PASSWORD} \
+-e TZ=Europe/Moscow \
+-d --network="host" --rm random_home

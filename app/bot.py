@@ -1,13 +1,13 @@
 from aiogram import Bot, Dispatcher
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 
-from app.configs.bot import API_TOKEN, PROXY_AUTH, PROXY_URL
+from app.configs.bot import API_TOKEN
 from app import routes
 
 
-bot = Bot(token=API_TOKEN, proxy_auth=PROXY_AUTH, proxy=PROXY_URL)
+bot_instance = Bot(token=API_TOKEN)
 
 storage = MemoryStorage()
-dispatcher = Dispatcher(bot, storage=storage)
+dispatcher = Dispatcher(bot_instance, storage=storage)
 
 routes.set_routes(dispatcher)
