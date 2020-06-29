@@ -14,7 +14,6 @@ def main():
 
     executor.start_polling(bot.dispatcher,
                            skip_updates=True,
-                           #on_startup=utils.update_proxies_on_startup
                            )
 
 

@@ -8,6 +8,9 @@ from app.tools.ProxyPool.main import ProxyPool
 
 
 async def update_proxies(bot_loop):
+    proxy_pool = ProxyPool(loop=bot_loop)
+    await proxy_pool.upload_proxies()
+
     day = 0
     while True:
         if (datetime.today().hour == 4 and datetime.today().minute == 0) and (day != datetime.today().day):
