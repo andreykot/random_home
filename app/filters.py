@@ -12,19 +12,30 @@ def search_terms(callback):
 
 # data filters
 
-def city_filter(data):
-    voc = {'Москва': 1,
-           'Санкт-Петербург': 2}
+def city_filter(data, inverse=False):
+    if not data:
+        return None
+
+    voc = {'Москва': 1, 'Санкт-Петербург': 2}
+    inv_voc = {1: 'Москва', 2: 'Санкт-Петербург'}
+
+    voc = voc if not inverse else inv_voc
+
     if data in voc:
         return [voc[data]]
     else:
         raise ValueError("Invalid city value.")
 
 
-def deal_filter(data):
-    voc = {'Купить': 'flatsale',
-           'Снять': 'flatrent',
-           'Посуточная аренда': 'flatrent_24h'}
+def deal_filter(data, inverse=False):
+    if not data:
+        return None
+
+    voc = {'Купить': 'flatsale', 'Снять': 'flatrent', 'Посуточная аренда': 'flatrent_24h'}
+    inv_voc = {'flatsale': 'Купить', 'flatrent': 'Снять', 'flatrent_24h': 'Посуточная аренда'}
+
+    voc = voc if not inverse else inv_voc
+
     if data in voc:
         return voc[data]
     else:
@@ -118,8 +129,87 @@ underground_voc = {
             "Ладожская": 225,
             "Проспект Большевиков": 226,
             "Улица Дыбенко": 227
-        }
+        },
+        'id': {
+            167: 'Девяткино',
+            168: 'Гражданский проспект',
+            169: 'Академическая',
+            170: 'Политехническая',
+            171: 'Пл. Мужества',
+            172: 'Лесная',
+            173: 'Выборгская',
+            174: 'Пл. Ленина',
+            175: 'Чернышевская',
+            176: 'Пл. Восстания',
+            177: 'Владимирская',
+            178: 'Пушкинская',
+            179: 'Технологический институт',
+            180: 'Балтийская',
+            181: 'Нарвская',
+            182: 'Кировский завод',
+            183: 'Автово',
+            184: 'Ленинский проспект',
+            185: 'Проспект Ветеранов',
+            186: 'Парнас',
+            187: 'Проспект Просвещения',
+            188: 'Озерки',
+            189: 'Удельная',
+            190: 'Пионерская',
+            191: 'Черная речка',
+            192: 'Петроградская',
+            193: 'Горьковская',
+            194: 'Невский проспект',
+            195: 'Сенная площадь',
+            196: 'Технолический институт',
+            197: 'Фрунзенская',
+            198: 'Московский ворота',
+            199: 'Электросила',
+            200: 'Парк Победы',
+            201: 'Московская',
+            202: 'Звездная',
+            203: 'Купчино',
+            355: 'Беговая',
+            356: 'Новокрестовская',
+            204: 'Приморская',
+            205: 'Василеостровская',
+            206: 'Гостиный двор',
+            207: 'Маяковская',
+            208: 'Пл. Александра Невского',
+            210: 'Елизаровская',
+            211: 'Ломоносовская',
+            212: 'Пролетарская',
+            213: 'Обухово',
+            214: 'Рыбацкое',
+            232: 'Спасская',
+            221: 'Достоевская',
+            222: 'Лиговский проспект',
+            224: 'Новочеркасская',
+            225: 'Ладожская',
+            226: 'Проспект Большевиков',
+            227: 'Улица Дыбенко',
+            215: 'Комендантский проспект',
+            216: 'Старая деревня',
+            217: 'Крестовский остров',
+            218: 'Чкаловская',
+            219: 'Спортивная',
+            242: 'Адмиралтейская',
+            220: 'Садовая',
+            231: 'Звенигородская',
+            241: 'Обводный канал',
+            230: 'Волковская',
+            247: 'Бухаресткая',
+            246: 'Международная',
+            357: 'Проспект Славы',
+            358: 'Дунайская',
+            359: 'Шушары'}
     }
+
+
+def get_underground_station_by_id(id: int):
+    if id in underground_voc['id']:
+        return underground_voc['id'][id]
+    else:
+        return None
 
 
 def underground_station_filter(line: str, name: str):
@@ -128,6 +218,9 @@ def underground_station_filter(line: str, name: str):
 
 
 def rooms_filter(data, mode):
+    if not data:
+        return None
+
     if mode == 'to_int':
         to_int = {'Студии': [9],
                   '1-комнатные': [1],
@@ -148,8 +241,15 @@ def rooms_filter(data, mode):
         raise TypeError('Unknown mode of filter.')
 
 
-def apartment_type_filter(data):
+def apartment_type_filter(data, inverse=False):
+    if not data:
+        return None
+
     voc = {'Все': None, 'Новостройки': 2, 'Вторичка': 1}
+    inv_voc = {None: 'Все', 2: 'Новостройки', 1: 'Вторичка'}
+
+    voc = voc if not inverse else inv_voc
+
     if data in voc:
         return voc[data]
     else:
@@ -157,6 +257,9 @@ def apartment_type_filter(data):
 
 
 def price_filter(data):
+    if not data:
+        return None
+
     rent_prices = dict(list(zip(buttons.PRICE['rent'].items, [(0, 20000), (0, 30000), (0, 50000)])))
     sale_prices = dict(list(zip(buttons.PRICE['sale'].items, [(0, 5000000), (0, 10000000), (0, 15000000)])))
 

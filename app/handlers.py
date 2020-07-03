@@ -63,7 +63,7 @@ async def get_random_flat(message: types.Message):
                                             chat_id=message.from_user.id,
                                             disable_web_page_preview=True,
                                             parse_mode='Markdown')
-
+        await asyncio.sleep(.05)
         await bot.bot_instance.send_location(chat_id=message.from_user.id,
                                              latitude=flat.coordinates['lat'],
                                              longitude=flat.coordinates['lng'],
@@ -89,15 +89,24 @@ async def get_price_from_msg(message: types.Message):
     user = session.query(db.models.User).filter(db.models.User.telegram_id == message.from_user.id).one()
     current_query = [q for q in user.queries if q.id == user.settings.editing_query][0]
     current_query.price = [min_price, max_price]
-    db.utils.safe_commit(session)
 
-    await message.reply(messages.PRICE_ANSWER.format(int(min_price), int(max_price)))
+    await bot.bot_instance.send_message(
+        text=messages.search_terms_answer(current_query.region,
+                                          current_query.deal,
+                                          current_query.underground,
+                                          current_query.rooms,
+                                          current_query.apartment_type,
+                                          current_query.price),
+        chat_id=message.from_user.id,
+        parse_mode='Markdown'
+    )
+    await asyncio.sleep(1)
     await bot.bot_instance.send_message(
         text=messages.SEARCH_TERMS,
         chat_id=message.from_user.id,
-        message_id=message.message_id,
         reply_markup=buttons.build_inlinekeyboard(buttons.SEARCH_TERMS)
     )
+    db.utils.safe_commit(session)
 
 
 async def notifications_settings(message: types.Message):
@@ -159,13 +168,6 @@ async def callback_notifications(query: types.CallbackQuery):
                                   execution_hour=hour,
                                   query_id=current_query.id)
             tasks.append(task)
-    elif query.data == 'тест: прямо сейчас':
-        from datetime import datetime
-        task = db.models.Task(user_id=user.id,
-                              task_type=1,
-                              execution_hour=datetime.now().hour,
-                              query_id=current_query.id)
-        tasks.append(task)
 
     elif query.data == 'Отключить уведомления':
         session.query(db.models.Task).filter(db.models.Task.user_id == user.id).delete()
@@ -178,7 +180,12 @@ async def callback_notifications(query: types.CallbackQuery):
         session.bulk_save_objects(tasks)
     db.utils.safe_commit(session)
 
-    await query.answer(messages.NOTIFICATIONS_ANSWER)
+    msg = messages.NO_NOTIFICATIONS_ANSWER if query.data == 'Отключить уведомления' else messages.NOTIFICATIONS_ANSWER
+    await bot.bot_instance.send_message(
+        text=msg,
+        chat_id=query.from_user.id
+    )
+    await query.answer()
 
 
 async def callback_search_terms(query: types.CallbackQuery):
@@ -211,7 +218,7 @@ async def callback_search_terms(query: types.CallbackQuery):
         user = session.query(db.models.User).filter(db.models.User.telegram_id == query.from_user.id).one()
         current_query = [q for q in user.queries if q.id == user.settings.editing_query][0]
 
-        if current_query.deal == 1:
+        if current_query.deal == 'flatsale':
             await bot.bot_instance.send_message(
                 text=messages.GET_APARTMENT_TYPE,
                 chat_id=query.from_user.id,
@@ -219,6 +226,7 @@ async def callback_search_terms(query: types.CallbackQuery):
             )
         else:
             await query.answer(messages.APART_TYPE_ALERT, show_alert=True)
+
     elif query.data == 'price':
         session = Session(bind=db.models.engine)
         user = session.query(db.models.User).filter(db.models.User.telegram_id == query.from_user.id).one()
@@ -244,16 +252,32 @@ async def callback_get_city(query: types.CallbackQuery):
     session = Session(bind=db.models.engine)
     user = session.query(db.models.User).filter(db.models.User.telegram_id == query.from_user.id).one()
     current_query = [q for q in user.queries if q.id == user.settings.editing_query][0]
-    current_query.region = filters.city_filter(query.data)
-    current_query.pages = None
-    db.utils.safe_commit(session)
+    region = filters.city_filter(query.data)
+    current_query.region = region
+    if region != current_query.region:
+        current_query.underground = None
 
-    await query.answer(f'Город: {query.data}')
+    current_query.pages = None
+
+    await bot.bot_instance.send_message(
+        text=messages.search_terms_answer(current_query.region,
+                                          current_query.deal,
+                                          current_query.underground,
+                                          current_query.rooms,
+                                          current_query.apartment_type,
+                                          current_query.price),
+        chat_id=query.from_user.id,
+        parse_mode='Markdown'
+    )
+    await asyncio.sleep(1)
     await bot.bot_instance.send_message(
         text=messages.SEARCH_TERMS,
         chat_id=query.from_user.id,
         reply_markup=buttons.build_inlinekeyboard(buttons.SEARCH_TERMS)
     )
+
+    db.utils.safe_commit(session)
+    await query.answer()
 
 
 async def callback_get_deal_type(query: types.CallbackQuery):
@@ -261,15 +285,29 @@ async def callback_get_deal_type(query: types.CallbackQuery):
     user = session.query(db.models.User).filter(db.models.User.telegram_id == query.from_user.id).one()
     current_query = [q for q in user.queries if q.id == user.settings.editing_query][0]
     current_query.deal = filters.deal_filter(query.data)
+    if query.data != 'Купить':
+        current_query.apartment_type = None
     current_query.pages = None
-    db.utils.safe_commit(session)
 
-    await query.answer(f"Тип: {query.data}")
+    await bot.bot_instance.send_message(
+        text=messages.search_terms_answer(current_query.region,
+                                          current_query.deal,
+                                          current_query.underground,
+                                          current_query.rooms,
+                                          current_query.apartment_type,
+                                          current_query.price),
+        chat_id=query.from_user.id,
+        parse_mode='Markdown'
+    )
+    await asyncio.sleep(1)
     await bot.bot_instance.send_message(
         text=messages.SEARCH_TERMS,
         chat_id=query.from_user.id,
         reply_markup=buttons.build_inlinekeyboard(buttons.SEARCH_TERMS)
     )
+
+    db.utils.safe_commit(session)
+    await query.answer()
 
 
 async def callback_get_rooms(query: types.CallbackQuery):
@@ -296,16 +334,29 @@ async def callback_get_rooms(query: types.CallbackQuery):
         await query.answer("Квартиры: {}".format(filters.rooms_filter(list(result), mode='array_to_str')))
 
     else:
-        if current_query.rooms:
-            await query.answer("Количество комнат установлено!")
-        else:
-            await query.answer("Количество комнат не установлено")
+        session = Session(bind=db.models.engine)
+        user = session.query(db.models.User).filter(db.models.User.telegram_id == query.from_user.id).one()
+        current_query = [q for q in user.queries if q.id == user.settings.editing_query][0]
 
+        await bot.bot_instance.send_message(
+            text=messages.search_terms_answer(current_query.region,
+                                              current_query.deal,
+                                              current_query.underground,
+                                              current_query.rooms,
+                                              current_query.apartment_type,
+                                              current_query.price),
+            chat_id=query.from_user.id,
+        parse_mode='Markdown'
+        )
+        await asyncio.sleep(1)
         await bot.bot_instance.send_message(
             text=messages.SEARCH_TERMS,
             chat_id=query.from_user.id,
             reply_markup=buttons.build_inlinekeyboard(buttons.SEARCH_TERMS)
         )
+
+        session.close()
+        await query.answer()
 
 
 async def callback_get_apartment_type(query: types.CallbackQuery):
@@ -316,14 +367,26 @@ async def callback_get_apartment_type(query: types.CallbackQuery):
     if apartment_type:
         current_query.apartment_type = apartment_type
         current_query.pages = None
-        db.utils.safe_commit(session)
 
-    await query.answer("Тип недвижимости: {}".format(query.data))
+    await bot.bot_instance.send_message(
+        text=messages.search_terms_answer(current_query.region,
+                                          current_query.deal,
+                                          current_query.underground,
+                                          current_query.rooms,
+                                          current_query.apartment_type,
+                                          current_query.price),
+        chat_id=query.from_user.id,
+        parse_mode='Markdown'
+    )
+    await asyncio.sleep(1)
     await bot.bot_instance.send_message(
         text=messages.SEARCH_TERMS,
         chat_id=query.from_user.id,
         reply_markup=buttons.build_inlinekeyboard(buttons.SEARCH_TERMS)
     )
+
+    db.utils.safe_commit(session)
+    await query.answer()
 
 
 async def callback_get_price(query: types.CallbackQuery):
@@ -333,25 +396,61 @@ async def callback_get_price(query: types.CallbackQuery):
     price = list(filters.price_filter(query.data))
     current_query.price = price
     current_query.pages = None
-    db.utils.safe_commit(session)
 
-    await query.answer(messages.PRICE_ANSWER.format(int(price[0]), int(price[1])))
+    await bot.bot_instance.send_message(
+        text=messages.search_terms_answer(current_query.region,
+                                          current_query.deal,
+                                          current_query.underground,
+                                          current_query.rooms,
+                                          current_query.apartment_type,
+                                          current_query.price),
+        chat_id=query.from_user.id,
+        parse_mode='Markdown'
+    )
+    await asyncio.sleep(1)
     await bot.bot_instance.send_message(
         text=messages.SEARCH_TERMS,
         chat_id=query.from_user.id,
         reply_markup=buttons.build_inlinekeyboard(buttons.SEARCH_TERMS)
     )
 
+    db.utils.safe_commit(session)
+    await query.answer()
+
 
 async def callback_underground_line(query: types.CallbackQuery):
-    metro_stations = filters.underground_voc[query.data].items()
-    metro_stations = [(s, f"underground_station {id}") for s, id in metro_stations]
+    if query.data == "Любая станция":
+        session = Session(bind=db.models.engine)
+        user = session.query(db.models.User).filter(db.models.User.telegram_id == query.from_user.id).one()
+        current_query = [q for q in user.queries if q.id == user.settings.editing_query][0]
+        current_query.underground = None
+        await bot.bot_instance.send_message(
+            text=messages.search_terms_answer(current_query.region,
+                                              current_query.deal,
+                                              current_query.underground,
+                                              current_query.rooms,
+                                              current_query.apartment_type,
+                                              current_query.price),
+            chat_id=query.from_user.id,
+            parse_mode='Markdown'
+        )
+        await asyncio.sleep(1)
+        await bot.bot_instance.send_message(
+            text=messages.SEARCH_TERMS,
+            chat_id=query.from_user.id,
+            reply_markup=buttons.build_inlinekeyboard(buttons.SEARCH_TERMS)
+        )
 
-    await bot.bot_instance.send_message(
-        text=messages.GET_UNDERGROUND2,
-        chat_id=query.from_user.id,
-        disable_web_page_preview=True,
-        reply_markup=buttons.build_inlinekeyboard(buttons.Buttons(items=metro_stations)))
+    else:
+        metro_stations = filters.underground_voc[query.data].items()
+        metro_stations = [(s, f"underground_station {id}") for s, id in metro_stations]
+
+        await bot.bot_instance.send_message(
+            text=messages.GET_UNDERGROUND2,
+            chat_id=query.from_user.id,
+            disable_web_page_preview=True,
+            reply_markup=buttons.build_inlinekeyboard(buttons.Buttons(items=metro_stations)))
+
     await query.answer()
 
 
@@ -362,14 +461,26 @@ async def callback_get_underground_station(query: types.CallbackQuery):
     station = int(query.data.split(' ')[1])
     current_query.underground = station
     current_query.pages = None
-    db.utils.safe_commit(session)
 
-    await query.answer("Станция метро установлена!")
+    await bot.bot_instance.send_message(
+        text=messages.search_terms_answer(current_query.region,
+                                          current_query.deal,
+                                          current_query.underground,
+                                          current_query.rooms,
+                                          current_query.apartment_type,
+                                          current_query.price),
+        chat_id=query.from_user.id,
+        parse_mode='Markdown'
+    )
+    await asyncio.sleep(1)
     await bot.bot_instance.send_message(
         text=messages.SEARCH_TERMS,
         chat_id=query.from_user.id,
         reply_markup=buttons.build_inlinekeyboard(buttons.SEARCH_TERMS)
     )
+
+    db.utils.safe_commit(session)
+    await query.answer()
 
 
 async def callback_map(query: types.CallbackQuery, callback_data: dict):

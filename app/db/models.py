@@ -3,7 +3,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Session, relationship
 
 from datetime import datetime
-import math
+from math import ceil
 from random import randint
 import traceback
 
@@ -119,27 +119,28 @@ class Query(Base):
 
         flat, attempts = None, 1
         while not flat and attempts <= 3:
-            print('attempt: ', attempts)
+            #print('attempt: ', attempts)
             flat = await api_manager.run()
             attempts += 1
 
         if not flat:
             raise NotNewFlats
 
-        flat_obj = Flat(query_id=self.id,
-                        url=flat.url,
-                        cian_id=flat.cian_id,
-                        price=flat.price,
-                        coordinates=[flat.coordinates['lat'], flat.coordinates['lng']],
-                        city=flat.address['city'],
-                        street=flat.address['street'],
-                        house=flat.address['house'],
-                        object_type=flat.info['object_type'],
-                        floor=flat.info['floor'],
-                        area=flat.info['area'],
-                        phone=flat.phone,
-                        description=flat.description
-                 )
+        flat_obj = Flat(
+            query_id=self.id,
+            url=flat.url,
+            cian_id=flat.cian_id,
+            price=flat.price,
+            coordinates=[flat.coordinates['lat'], flat.coordinates['lng']],
+            city=flat.address['city'],
+            street=flat.address['street'],
+            house=flat.address['house'],
+            object_type=flat.info['object_type'],
+            floor=flat.info['floor'],
+            area=flat.info['area'],
+            phone=flat.phone,
+            description=flat.description
+        )
         session.add(flat_obj)
         session.commit()
         session.refresh(flat_obj)
@@ -155,7 +156,7 @@ class Query(Base):
             )
         )
 
-        pages_count = math.ceil(api_manager.data['offersCount'] / 28)
+        pages_count = ceil(api_manager.data['offersCount'] / 28)
         session.query(Query).\
             filter(Query.id == self.id).\
             update({'pages': pages_count if pages_count <= 54 else 54})

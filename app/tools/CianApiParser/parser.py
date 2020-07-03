@@ -271,7 +271,8 @@ class ApiManager:
     async def process_response(self, response):
         self.data = await response.json()
         if self.data is None:
-            print(response.status)
+            #print(response.status)
+            pass
 
     def get_random_flat(self):
         if isinstance(self.data, dict) and 'offers' in self.data:
