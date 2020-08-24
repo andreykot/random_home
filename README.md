@@ -1,4 +1,4 @@
-# Random Home [В разработке]
+# Random Home
 
 https://t.me/random_home_bot
 
